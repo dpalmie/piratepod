@@ -1,0 +1,51 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+  <div class="flex flex-col min-h-screen">
+    <main class="flex-1 px-6 py-10 sm:px-10 sm:py-16 max-w-2xl">
+      <div class="mb-12">
+        <div class="flex items-center gap-3">
+          <div class="relative inline-block">
+            <span class="absolute top-1/2 left-[56%] -translate-x-1/2 -translate-y-1/2 font-heading text-[28px] leading-none pointer-events-none select-none">P</span>
+            <pre class="text-[4px] leading-[1.2] font-mono select-none">{`       /\\
+       ||_____------_____------_____------______
+       ||                                        \\
+       ||                                        /
+       ||                                        \\
+       ||                                        /
+       ||                                        \\
+       ||                                        /
+       ||                                        \\
+       ||                                        /
+       ||                                        \\
+       ||                                        /
+       ||                                        \\
+       ||_____------_____------_____------______/
+       ||
+       ||`}</pre>
+          </div>
+          <h1 class="text-2xl font-heading tracking-tight">PiratePod</h1>
+        </div>
+      </div>
+
+      <p class="text-sm leading-relaxed max-w-lg">
+        PiratePod is an <a href="https://github.com/dpalmie/piratepod" target="_blank" rel="noopener noreferrer" class="underline underline-offset-4 decoration-fg/30 hover:decoration-fg transition-colors">open-source</a>,
+        local-first AI podcast generator from the cofounder of
+        PocketPod.
+        Generate personalized podcasts on any topic, entirely on your own
+        hardware, with no data leaving your machine.
+      </p>
+
+      <p class="text-sm leading-relaxed max-w-lg mt-4">
+        Private by default, bespoke to your interests.
+      </p>
+    </main>
+
+    <footer class="px-6 sm:px-10 pb-10 max-w-lg">
+      <hr class="border-t border-fg mb-6" />
+      <span class="text-sm font-heading">&copy; 2026 DPL Inc.</span>
+    </footer>
+  </div>
+</Layout>
