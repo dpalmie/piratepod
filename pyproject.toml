@@ -1,0 +1,20 @@
+[project]
+name = "piratepod"
+version = "0.0.0"
+description = "Piratepod monorepo root"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ingest",
+    "research",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+ingest = { workspace = true }
+research = { workspace = true }
+piratepod-core = { workspace = true }
+
+[tool.uv.workspace]
+members = ["workers/*", "py/*"]
