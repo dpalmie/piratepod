@@ -5,7 +5,8 @@ from fastapi import HTTPException
 
 from piratepod_core.logging import get_logger
 
-JINA_READER = "https://r.jina.ai/"
+from .config import JINA_READER
+
 log = get_logger(__name__)
 
 

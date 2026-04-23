@@ -160,7 +160,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
-    { name = "piratepod-core", editable = "py/piratepod_core" },
+    { name = "piratepod-core", editable = "libs/py/piratepod_core" },
 ]
 
 [[package]]
@@ -181,7 +181,7 @@ requires-dist = [
 [[package]]
 name = "piratepod-core"
 version = "0.0.0"
-source = { editable = "py/piratepod_core" }
+source = { editable = "libs/py/piratepod_core" }
 dependencies = [
     { name = "fastapi" },
     { name = "structlog" },
@@ -276,7 +276,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "piratepod-core", editable = "py/piratepod_core" }]
+requires-dist = [{ name = "piratepod-core", editable = "libs/py/piratepod_core" }]
 
 [[package]]
 name = "starlette"

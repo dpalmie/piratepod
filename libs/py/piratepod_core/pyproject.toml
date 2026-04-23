@@ -1,7 +1,7 @@
 [project]
 name = "piratepod-core"
 version = "0.0.0"
-description = "Shared runtime for piratepod services"
+description = "Shared runtime for PiratePod services"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.136",

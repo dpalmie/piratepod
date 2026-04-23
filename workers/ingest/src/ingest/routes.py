@@ -1,14 +1,10 @@
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, HttpUrl
 
-from .fetcher import fetch_url
+from .schemas import UrlRequest
+from .service import fetch_url
 
 router = APIRouter()
-
-
-class UrlRequest(BaseModel):
-    url: HttpUrl
 
 
 @router.post("/ingest/url", response_class=PlainTextResponse)

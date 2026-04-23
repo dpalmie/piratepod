@@ -17,4 +17,4 @@ research = { workspace = true }
 piratepod-core = { workspace = true }
 
 [tool.uv.workspace]
-members = ["workers/*", "py/*"]
+members = ["workers/*", "libs/py/*"]
