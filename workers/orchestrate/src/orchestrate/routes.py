@@ -8,4 +8,4 @@ router = APIRouter()
 
 @router.post("/orchestrate/generate", response_model=GenerateResponse)
 async def orchestrate_generate(req: GenerateRequest) -> GenerateResponse:
-    return generate_podcast(req)
+    return await generate_podcast(req)

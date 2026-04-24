@@ -7,6 +7,7 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    status: str
     url: str
     title: str | None = None
+    markdown: str
+    script: str
