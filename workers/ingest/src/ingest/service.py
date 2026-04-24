@@ -11,6 +11,7 @@ log = get_logger(__name__)
 
 
 async def fetch_url(url: str, *, timeout: float = 30.0) -> str:
+    """Retrieve URL contents and return as markdown string."""
     headers = {}
     if key := os.getenv("JINA_API_KEY"):
         headers["Authorization"] = f"Bearer {key}"

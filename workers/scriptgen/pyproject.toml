@@ -1,0 +1,12 @@
+[project]
+name = "scriptgen"
+version = "0.0.0"
+description = "PiratePod Script Generation Worker"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "piratepod-core",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12"]
+build-backend = "uv_build"
