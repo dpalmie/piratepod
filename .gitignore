@@ -12,3 +12,17 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.piratepod/
+
+# Go
+*.exe
+*.test
+*.out
+coverage.out
+
+# rss service runtime data
+services/rss/data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal

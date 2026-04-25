@@ -22,6 +22,9 @@ class GenerateResponse(BaseModel):
     script: str
     audio_path: str
     audio_format: str
+    feed_url: str
+    episode_id: str
+    episode_audio_url: str
 
 
 class IngestResponse(BaseModel):
@@ -33,3 +36,15 @@ class IngestResponse(BaseModel):
 class AudioResponse(BaseModel):
     audio_path: str
     audio_format: str
+
+
+class PodcastResponse(BaseModel):
+    id: str
+    slug: str
+    title: str
+    feed_url: str
+
+
+class EpisodeResponse(BaseModel):
+    id: str
+    audio_url: str
