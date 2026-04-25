@@ -24,7 +24,7 @@ jobs:
       - uses: extractions/setup-just@v3
 
       - name: Test core
-        run: uv run --package piratepod-core pytest libs/py/piratepod_core
+        run: just core-test
 
       - name: Test workers
         run: just workers-test
