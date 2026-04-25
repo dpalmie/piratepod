@@ -1,2 +1,9 @@
-# Placeholder: real LLM config (model, temperature, provider) lands here when
-# we wire an actual provider.
+import os
+
+SCRIPTGEN_LLM_API_KEY = os.getenv("SCRIPTGEN_LLM_API_KEY", "llamacpp")
+SCRIPTGEN_LLM_BASE_URL = os.getenv("SCRIPTGEN_LLM_BASE_URL", "http://localhost:8010/v1")
+SCRIPTGEN_LLM_MAX_TOKENS = int(os.getenv("SCRIPTGEN_LLM_MAX_TOKENS", "1200"))
+SCRIPTGEN_LLM_MODEL = os.getenv("SCRIPTGEN_LLM_MODEL", "ggml-org/gemma-4-E4B-it-GGUF")
+SCRIPTGEN_LLM_TEMPERATURE = float(os.getenv("SCRIPTGEN_LLM_TEMPERATURE", "0.7"))
+SCRIPTGEN_LLM_TIMEOUT = float(os.getenv("SCRIPTGEN_LLM_TIMEOUT", "180"))
+SCRIPTGEN_MAX_INPUT_CHARS = int(os.getenv("SCRIPTGEN_MAX_INPUT_CHARS", "12000"))

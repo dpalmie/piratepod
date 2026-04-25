@@ -5,8 +5,17 @@ description = "PiratePod Script Generation Worker"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "piratepod-core",
+    "openai>=2.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
 ]
 
 [build-system]
 requires = ["uv_build>=0.11.7,<0.12"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -8,6 +8,7 @@ ingest_port      := "8001"
 scriptgen_port   := "8002"
 orchestrate_port := "8003"
 audiogen_port    := "8004"
+llm_port         := "8010"
 
 # list all recipes
 default:
@@ -21,16 +22,28 @@ ingest-test:
 orchestrate-test:
     uv run --package orchestrate pytest workers/orchestrate
 
+# pytest workers/scriptgen
+scriptgen-test:
+    uv run --package scriptgen pytest workers/scriptgen
+
 # pytest workers/audiogen
 audiogen-test:
     uv run --package audiogen pytest workers/audiogen
 
 # pytest all python workers with tests
-workers-test: ingest-test orchestrate-test audiogen-test
+workers-test: ingest-test scriptgen-test orchestrate-test audiogen-test
 
 # check for llama.cpp's llama-tts binary (installed via Homebrew, not uv)
 audiogen-check:
     @command -v "${LLAMA_TTS_BIN:-llama-tts}" >/dev/null || { echo "missing llama-tts. Install it with: brew install llama.cpp"; exit 1; }
+
+# check for llama.cpp's llama-server binary (installed via Homebrew, not uv)
+scriptgen-llm-check:
+    @command -v "${LLAMA_SERVER_BIN:-llama-server}" >/dev/null || { echo "missing llama-server. Install it with: brew install llama.cpp"; exit 1; }
+
+# llama.cpp OpenAI-compatible chat server for scriptgen
+scriptgen-llm-run: scriptgen-llm-check
+    "${LLAMA_SERVER_BIN:-llama-server}" -hf "${SCRIPTGEN_LLM_MODEL:-ggml-org/gemma-4-E4B-it-GGUF}" --port {{llm_port}}
 
 # uvicorn workers/ingest with auto-reload
 ingest-run:
@@ -44,9 +57,203 @@ scriptgen-run:
 audiogen-run: audiogen-check
     uv run --package audiogen uvicorn audiogen.app:app --reload --port {{audiogen_port}}
 
-# uvicorn workers/orchestrate with auto-reload (needs rss-run + ingest-run + scriptgen-run + audiogen-run alongside)
+# uvicorn workers/orchestrate with auto-reload (needs rss-run + scriptgen-llm-run + ingest-run + scriptgen-run + audiogen-run alongside)
 orchestrate-run:
     uv run --package orchestrate uvicorn orchestrate.app:app --reload --port {{orchestrate_port}}
+
+# start all local backend services; Ctrl+C stops everything it started
+backend-run: scriptgen-llm-check audiogen-check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .piratepod/logs .piratepod/pids
+    echo "$$" > .piratepod/pids/backend-run.pid
+
+    names=(rss scriptgen-llm ingest scriptgen audiogen orchestrate)
+    cleanup_started=0
+
+    kill_tree() {
+        local pid="$1"
+        for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+            kill_tree "$child"
+        done
+        kill "$pid" 2>/dev/null || true
+    }
+
+    kill_port() {
+        local port="$1"
+        for pid in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true); do
+            kill_tree "$pid"
+        done
+    }
+
+    cleanup() {
+        local exit_code="${1:-0}"
+        set +e
+        trap - EXIT INT TERM
+        if [[ "$cleanup_started" -eq 1 ]]; then
+            exit "$exit_code"
+        fi
+        cleanup_started=1
+        echo
+        echo "stopping backend..."
+        for name in "${names[@]}"; do
+            pid_file=".piratepod/pids/${name}.pid"
+            if [[ -f "$pid_file" ]]; then
+                pid="$(cat "$pid_file")"
+                if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                    kill_tree "$pid"
+                fi
+                rm -f "$pid_file"
+            fi
+        done
+        for port in {{orchestrate_port}} {{audiogen_port}} {{scriptgen_port}} {{ingest_port}} {{llm_port}} 8080; do
+            kill_port "$port"
+        done
+        rm -f .piratepod/pids/backend-run.pid
+        exit "$exit_code"
+    }
+    trap 'cleanup 130' INT TERM
+    trap 'cleanup $?' EXIT
+
+    start() {
+        local name="$1"
+        shift
+        local log=".piratepod/logs/${name}.log"
+        local pid_file=".piratepod/pids/${name}.pid"
+        if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+            echo "$name already running with pid $(cat "$pid_file")"
+            exit 1
+        fi
+        echo "starting $name -> $log"
+        "$@" >"$log" 2>&1 &
+        echo "$!" > "$pid_file"
+    }
+
+    wait_http() {
+        local name="$1"
+        local url="$2"
+        local tries="${3:-180}"
+        local pid_file=".piratepod/pids/${name}.pid"
+        for _ in $(seq 1 "$tries"); do
+            if curl -fsS "$url" >/dev/null 2>&1; then
+                echo "$name ready"
+                return 0
+            fi
+            if [[ -f "$pid_file" ]]; then
+                pid="$(cat "$pid_file")"
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    echo "$name exited early; log:"
+                    tail -40 ".piratepod/logs/${name}.log" || true
+                    exit 1
+                fi
+            fi
+            sleep 1
+        done
+        echo "$name did not become ready at $url; log:"
+        tail -40 ".piratepod/logs/${name}.log" || true
+        exit 1
+    }
+
+    start rss bash -c 'cd services/rss && exec go run ./cmd/rss'
+    wait_http rss "http://127.0.0.1:8080/healthz" 60
+
+    start scriptgen-llm "${LLAMA_SERVER_BIN:-llama-server}" -hf "${SCRIPTGEN_LLM_MODEL:-ggml-org/gemma-4-E4B-it-GGUF}" --port {{llm_port}}
+    wait_http scriptgen-llm "http://127.0.0.1:{{llm_port}}/v1/models" 600
+
+    start ingest uv run --package ingest uvicorn ingest.app:app --host 127.0.0.1 --port {{ingest_port}}
+    wait_http ingest "http://127.0.0.1:{{ingest_port}}/healthz" 60
+
+    start scriptgen uv run --package scriptgen uvicorn scriptgen.app:app --host 127.0.0.1 --port {{scriptgen_port}}
+    wait_http scriptgen "http://127.0.0.1:{{scriptgen_port}}/healthz" 60
+
+    start audiogen uv run --package audiogen uvicorn audiogen.app:app --host 127.0.0.1 --port {{audiogen_port}}
+    wait_http audiogen "http://127.0.0.1:{{audiogen_port}}/healthz" 60
+
+    start orchestrate env INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 uv run --package orchestrate uvicorn orchestrate.app:app --host 127.0.0.1 --port {{orchestrate_port}}
+    wait_http orchestrate "http://127.0.0.1:{{orchestrate_port}}/healthz" 60
+
+    echo
+    echo "backend ready"
+    echo "orchestrate: http://127.0.0.1:{{orchestrate_port}}"
+    echo "rss:         http://127.0.0.1:8080"
+    echo "llm:         http://127.0.0.1:{{llm_port}}/v1"
+    echo "smoke:       just pipeline-smoke https://example.com"
+    echo "logs:        .piratepod/logs"
+    echo
+    echo "Press Ctrl+C to stop."
+    while true; do sleep 3600; done
+
+# stop backend services started by backend-run
+backend-stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    names=(orchestrate audiogen scriptgen ingest scriptgen-llm rss)
+
+    kill_tree() {
+        local pid="$1"
+        for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+            kill_tree "$child"
+        done
+        kill "$pid" 2>/dev/null || true
+    }
+
+    kill_port() {
+        local port="$1"
+        for pid in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true); do
+            echo "stopping listener on :$port ($pid)"
+            kill_tree "$pid"
+        done
+    }
+
+    for name in "${names[@]}"; do
+        pid_file=".piratepod/pids/${name}.pid"
+        if [[ ! -f "$pid_file" ]]; then
+            echo "$name: no pid file"
+            continue
+        fi
+        pid="$(cat "$pid_file")"
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            echo "stopping $name ($pid)"
+            kill_tree "$pid"
+        else
+            echo "$name: not running"
+        fi
+        rm -f "$pid_file"
+    done
+    for port in {{orchestrate_port}} {{audiogen_port}} {{scriptgen_port}} {{ingest_port}} {{llm_port}} 8080; do
+        kill_port "$port"
+    done
+    backend_pid_file=".piratepod/pids/backend-run.pid"
+    if [[ -f "$backend_pid_file" ]]; then
+        backend_pid="$(cat "$backend_pid_file")"
+        if [[ -n "$backend_pid" ]] && kill -0 "$backend_pid" 2>/dev/null; then
+            echo "stopping backend-run ($backend_pid)"
+            kill "$backend_pid" 2>/dev/null || true
+        fi
+        rm -f "$backend_pid_file"
+    fi
+
+# show local backend service health
+backend-status:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    check() {
+        local name="$1"
+        local url="$2"
+        if curl -fsS "$url" >/dev/null 2>&1; then
+            printf '%-14s %s\n' "$name" "up"
+        else
+            printf '%-14s %s\n' "$name" "down"
+        fi
+    }
+
+    check rss "http://127.0.0.1:8080/healthz"
+    check scriptgen-llm "http://127.0.0.1:{{llm_port}}/v1/models"
+    check ingest "http://127.0.0.1:{{ingest_port}}/healthz"
+    check scriptgen "http://127.0.0.1:{{scriptgen_port}}/healthz"
+    check audiogen "http://127.0.0.1:{{audiogen_port}}/healthz"
+    check orchestrate "http://127.0.0.1:{{orchestrate_port}}/healthz"
 
 # quick e2e: POST a URL through orchestrate, print the resulting script
 pipeline-smoke url="https://example.com":

@@ -1,5 +1,6 @@
 from typing import Any
 
+from piratepod_core.urls import ensure_url_scheme
 from pydantic import BaseModel, HttpUrl, field_validator
 
 
@@ -10,9 +11,7 @@ class GenerateRequest(BaseModel):
     @field_validator("url", mode="before")
     @classmethod
     def _ensure_scheme(cls, v: Any) -> Any:
-        if isinstance(v, str) and "://" not in v:
-            return f"https://{v}"
-        return v
+        return ensure_url_scheme(v)
 
 
 class GenerateResponse(BaseModel):
