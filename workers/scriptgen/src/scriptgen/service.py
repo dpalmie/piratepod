@@ -16,8 +16,15 @@ from .config import (
     SCRIPTGEN_LLM_TIMEOUT,
     SCRIPTGEN_MAX_INPUT_CHARS,
 )
-from .prompts import SYSTEM_PROMPT, intro_prompt, outro_prompt, segment_prompt
-from .schemas import ScriptRequest, ScriptResponse, StorySegment
+from .prompts import (
+    SYSTEM_PROMPT,
+    intro_prompt,
+    outro_prompt,
+    segment_prompt,
+    source_context,
+    sources_context,
+)
+from .schemas import ScriptRequest, ScriptResponse, ScriptSource, StorySegment
 
 log = get_logger(__name__)
 
@@ -25,26 +32,36 @@ T = TypeVar("T", bound=BaseModel)
 
 
 async def generate_script(req: ScriptRequest) -> ScriptResponse:
-    article = _truncate(req.markdown)
+    sources = [_truncate_source(source) for source in req.sources]
+    all_sources = sources_context(
+        [(source.title, source.url, source.markdown) for source in sources]
+    )
     client = _client()
 
     log.info(
         "scriptgen.start",
         title=req.title,
-        input_chars=len(req.markdown),
-        prompt_chars=len(article),
+        source_count=len(req.sources),
+        input_chars=sum(len(source.markdown) for source in req.sources),
+        prompt_chars=sum(len(source.markdown) for source in sources),
     )
-    intro, segment, outro = await asyncio.gather(
-        _generate_intro(client, req.title, article),
-        _generate_segment(client, req.title, article),
-        _generate_outro(client, req.title, article),
+    results = await asyncio.gather(
+        _generate_intro(client, req.title, all_sources),
+        *(
+            _generate_segment(client, req.title, source, index)
+            for index, source in enumerate(sources, start=1)
+        ),
+        _generate_outro(client, req.title, all_sources),
     )
-    script = _compose_script(intro, [segment], outro)
+    intro = results[0]
+    segments = list(results[1:-1])
+    outro = results[-1]
+    script = _compose_script(intro, segments, outro)
     log.info("scriptgen.done", title=req.title, script_chars=len(script))
 
     return ScriptResponse(
         intro=intro,
-        segments=[segment],
+        segments=segments,
         outro=outro,
         script=script,
     )
@@ -66,12 +83,12 @@ def _client() -> AsyncOpenAI:
     )
 
 
-async def _generate_intro(client: AsyncOpenAI, title: str, article: str) -> str:
+async def _generate_intro(client: AsyncOpenAI, title: str, sources: str) -> str:
     data = await _chat_json(
         client,
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": intro_prompt(title, article)},
+            {"role": "user", "content": intro_prompt(title, sources)},
         ],
         "intro",
     )
@@ -79,25 +96,26 @@ async def _generate_intro(client: AsyncOpenAI, title: str, article: str) -> str:
 
 
 async def _generate_segment(
-    client: AsyncOpenAI, title: str, article: str
+    client: AsyncOpenAI, title: str, source: ScriptSource, index: int
 ) -> StorySegment:
+    context = source_context(index, source.title, source.url, source.markdown)
     data = await _chat_json(
         client,
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": segment_prompt(title, article)},
+            {"role": "user", "content": segment_prompt(title, context)},
         ],
         "segment",
     )
     return _validate(StorySegment, data, "segment")
 
 
-async def _generate_outro(client: AsyncOpenAI, title: str, article: str) -> str:
+async def _generate_outro(client: AsyncOpenAI, title: str, sources: str) -> str:
     data = await _chat_json(
         client,
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": outro_prompt(title, article)},
+            {"role": "user", "content": outro_prompt(title, sources)},
         ],
         "outro",
     )
@@ -167,3 +185,11 @@ def _compose_script(intro: str, segments: list[StorySegment], outro: str) -> str
 
 def _truncate(markdown: str) -> str:
     return markdown[:SCRIPTGEN_MAX_INPUT_CHARS]
+
+
+def _truncate_source(source: ScriptSource) -> ScriptSource:
+    return ScriptSource(
+        title=source.title,
+        url=source.url,
+        markdown=_truncate(source.markdown),
+    )

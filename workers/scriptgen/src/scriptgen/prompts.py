@@ -12,15 +12,15 @@ SYSTEM_PROMPT = clean_prompt(
 
 INTRO_PROMPT = clean_prompt(
     """
-    Write the main podcast introduction for this episode.
-    Set context and tee up the story in 2-4 sentences.
+    Write the main podcast introduction for this combined episode.
+    Set context and tee up the stories in 2-4 sentences.
     Return JSON exactly like: {"intro":"..."}
     """
 )
 
 SEGMENT_PROMPT = clean_prompt(
     """
-    Write one podcast story segment from this article.
+    Write one podcast story segment from this source.
     Use a short setup, a clear main narration, and a brief wrap.
     Keep it concise and spoken-word friendly.
     Return JSON exactly like: {"title":"...","intro":"...","main":"...","outro":"..."}
@@ -29,34 +29,65 @@ SEGMENT_PROMPT = clean_prompt(
 
 OUTRO_PROMPT = clean_prompt(
     """
-    Write the main podcast conclusion for this episode.
-    Briefly summarize the takeaway and close the episode.
+    Write the main podcast conclusion for this combined episode.
+    Tie the sources together, briefly summarize the takeaway, and close the episode.
     Return JSON exactly like: {"outro":"..."}
     """
 )
 
-ARTICLE_CONTEXT_TEMPLATE = clean_prompt(
+SOURCE_CONTEXT_TEMPLATE = clean_prompt(
     """
+    SOURCE {index}:
+
     TITLE:
     {title}
+
+    URL:
+    {url}
 
     ARTICLE:
     {article}
     """
 )
 
+EPISODE_CONTEXT_TEMPLATE = clean_prompt(
+    """
+    EPISODE TITLE:
+    {title}
 
-def intro_prompt(title: str, article: str) -> str:
-    return f"{INTRO_PROMPT}\n\n{article_context(title, article)}"
-
-
-def segment_prompt(title: str, article: str) -> str:
-    return f"{SEGMENT_PROMPT}\n\n{article_context(title, article)}"
-
-
-def outro_prompt(title: str, article: str) -> str:
-    return f"{OUTRO_PROMPT}\n\n{article_context(title, article)}"
+    SOURCES:
+    {sources}
+    """
+)
 
 
-def article_context(title: str, article: str) -> str:
-    return ARTICLE_CONTEXT_TEMPLATE.format(title=title, article=article)
+def intro_prompt(title: str, sources: str) -> str:
+    return f"{INTRO_PROMPT}\n\n{episode_context(title, sources)}"
+
+
+def segment_prompt(title: str, source: str) -> str:
+    return f"{SEGMENT_PROMPT}\n\n{episode_context(title, source)}"
+
+
+def outro_prompt(title: str, sources: str) -> str:
+    return f"{OUTRO_PROMPT}\n\n{episode_context(title, sources)}"
+
+
+def source_context(index: int, title: str, url: str, article: str) -> str:
+    return SOURCE_CONTEXT_TEMPLATE.format(
+        index=index,
+        title=title,
+        url=url,
+        article=article,
+    )
+
+
+def sources_context(sources: list[tuple[str, str, str]]) -> str:
+    return "\n\n---\n\n".join(
+        source_context(index, title, url, article)
+        for index, (title, url, article) in enumerate(sources, start=1)
+    )
+
+
+def episode_context(title: str, sources: str) -> str:
+    return EPISODE_CONTEXT_TEMPLATE.format(title=title, sources=sources)

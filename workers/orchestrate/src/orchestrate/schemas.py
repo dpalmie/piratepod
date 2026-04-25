@@ -1,23 +1,31 @@
 from typing import Any
 
 from piratepod_core.urls import ensure_url_scheme
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 
 class GenerateRequest(BaseModel):
-    url: HttpUrl
+    urls: list[HttpUrl] = Field(min_length=1)
     title: str | None = None
 
-    @field_validator("url", mode="before")
+    @field_validator("urls", mode="before")
     @classmethod
     def _ensure_scheme(cls, v: Any) -> Any:
-        return ensure_url_scheme(v)
+        if isinstance(v, list):
+            return [ensure_url_scheme(item) for item in v]
+        return v
+
+
+class SourceResponse(BaseModel):
+    title: str
+    url: str
+    markdown: str
 
 
 class GenerateResponse(BaseModel):
-    url: str
+    urls: list[str]
+    sources: list[SourceResponse]
     title: str
-    markdown: str
     script: str
     audio_path: str
     audio_format: str
@@ -26,10 +34,12 @@ class GenerateResponse(BaseModel):
     episode_audio_url: str
 
 
-class IngestResponse(BaseModel):
-    title: str
-    url: str
-    markdown: str
+class IngestResponse(SourceResponse):
+    pass
+
+
+class ScriptgenResponse(BaseModel):
+    script: str
 
 
 class AudioResponse(BaseModel):

@@ -4,17 +4,35 @@ import pytest
 from fastapi import HTTPException
 
 import scriptgen.service as service
-from scriptgen.schemas import ScriptRequest
+from scriptgen.schemas import ScriptRequest, ScriptSource
 
 
-def test_generate_script_calls_intro_segment_outro_and_flattens(monkeypatch) -> None:
+def source(
+    title: str = "Example Domain",
+    url: str = "https://example.com/",
+    markdown: str = "Article body",
+) -> ScriptSource:
+    return ScriptSource(title=title, url=url, markdown=markdown)
+
+
+def test_generate_script_calls_intro_segment_per_source_outro_and_flattens(
+    monkeypatch,
+) -> None:
     calls: list[str] = []
 
-    async def chat_json(_client, _messages, label: str):
+    async def chat_json(_client, messages, label: str):
         calls.append(label)
         if label == "intro":
             return {"intro": "Welcome to the show."}
         if label == "segment":
+            prompt = messages[-1]["content"]
+            if "Second Source" in prompt:
+                return {
+                    "title": "Second Source",
+                    "intro": "Now to the second story.",
+                    "main": "The second source has its own details.",
+                    "outro": "That closes the second source.",
+                }
             return {
                 "title": "Example Domain",
                 "intro": "Here is why this page exists.",
@@ -30,19 +48,37 @@ def test_generate_script_calls_intro_segment_outro_and_flattens(monkeypatch) -> 
 
     resp = asyncio.run(
         service.generate_script(
-            ScriptRequest(title="Example Domain", markdown="Article body")
+            ScriptRequest(
+                title="Combined Episode",
+                sources=[
+                    source(),
+                    source(
+                        title="Second Source",
+                        url="https://example.org/",
+                        markdown="Second article body",
+                    ),
+                ],
+            )
         )
     )
 
-    assert sorted(calls) == ["intro", "outro", "segment"]
+    assert sorted(calls) == ["intro", "outro", "segment", "segment"]
     assert resp.intro == "Welcome to the show."
+    assert [segment.title for segment in resp.segments] == [
+        "Example Domain",
+        "Second Source",
+    ]
     assert resp.segments[0].main == "Example Domain is reserved for documentation examples."
+    assert resp.segments[1].main == "The second source has its own details."
     assert resp.outro == "Thanks for listening."
     assert resp.script == (
         "Welcome to the show.\n\n"
         "Here is why this page exists.\n\n"
         "Example Domain is reserved for documentation examples.\n\n"
         "That makes it safe for demos.\n\n"
+        "Now to the second story.\n\n"
+        "The second source has its own details.\n\n"
+        "That closes the second source.\n\n"
         "Thanks for listening."
     )
 
@@ -73,7 +109,9 @@ def test_generate_script_rejects_malformed_segment(monkeypatch) -> None:
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
-            service.generate_script(ScriptRequest(title="Example", markdown="Article"))
+            service.generate_script(
+                ScriptRequest(title="Example", sources=[source(markdown="Article")])
+            )
         )
 
     assert exc.value.status_code == 502
@@ -102,10 +140,21 @@ def test_generate_script_truncates_article_before_prompting(monkeypatch) -> None
 
     asyncio.run(
         service.generate_script(
-            ScriptRequest(title="Example", markdown="0123456789SHOULD_NOT_APPEAR")
+            ScriptRequest(
+                title="Example",
+                sources=[
+                    source(markdown="0123456789SHOULD_NOT_APPEAR"),
+                    source(
+                        title="Second",
+                        url="https://example.org/",
+                        markdown="abcdefghijSHOULD_NOT_APPEAR",
+                    ),
+                ],
+            )
         )
     )
 
     assert seen_user_prompts
-    assert all("0123456789" in prompt for prompt in seen_user_prompts)
+    assert any("0123456789" in prompt for prompt in seen_user_prompts)
+    assert any("abcdefghij" in prompt for prompt in seen_user_prompts)
     assert all("SHOULD_NOT_APPEAR" not in prompt for prompt in seen_user_prompts)

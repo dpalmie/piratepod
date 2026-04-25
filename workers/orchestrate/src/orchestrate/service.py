@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -24,34 +25,37 @@ from .schemas import (
     GenerateResponse,
     IngestResponse,
     PodcastResponse,
+    ScriptgenResponse,
+    SourceResponse,
 )
 
 log = get_logger(__name__)
 
 
 async def generate_podcast(req: GenerateRequest) -> GenerateResponse:
-    url = str(req.url)
-    log.info("orchestrate.start", url=url, title=req.title)
+    urls = [str(url) for url in req.urls]
+    log.info("orchestrate.start", urls=urls, url_count=len(urls), title=req.title)
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-        ingest = await _ingest(client, url)
-        title = req.title or ingest.title
-        script = await _scriptgen(client, ingest.markdown, title)
+        sources = list(await asyncio.gather(*(_ingest(client, url) for url in urls)))
+        title = _episode_title(req.title, sources)
+        script = await _scriptgen(client, sources, title)
         audio = await _audiogen(client, script, title)
         podcast, episode = await _publish_to_rss(client, title, script, audio)
 
     log.info(
         "orchestrate.done",
-        url=url,
+        urls=[source.url for source in sources],
+        source_count=len(sources),
         script_chars=len(script),
         audio_path=audio.audio_path,
         feed_url=podcast.feed_url,
         episode_id=episode.id,
     )
     return GenerateResponse(
-        url=ingest.url,
+        urls=[source.url for source in sources],
+        sources=list(sources),
         title=title,
-        markdown=ingest.markdown,
         script=script,
         audio_path=audio.audio_path,
         audio_format=audio.audio_format,
@@ -80,18 +84,39 @@ async def _ingest(client: httpx.AsyncClient, url: str) -> IngestResponse:
         raise HTTPException(502, "ingest returned malformed response") from e
 
 
-async def _scriptgen(client: httpx.AsyncClient, markdown: str, title: str) -> str:
+def _episode_title(request_title: str | None, sources: list[SourceResponse]) -> str:
+    if request_title and request_title.strip():
+        return request_title
+    if len(sources) == 1:
+        return sources[0].title
+    return f"Digest: {sources[0].title} + {len(sources) - 1} more"
+
+
+async def _scriptgen(
+    client: httpx.AsyncClient, sources: list[SourceResponse], title: str
+) -> str:
     try:
         resp = await client.post(
             f"{SCRIPTGEN_URL}/scriptgen/script",
-            json={"markdown": markdown, "title": title},
+            json={
+                "sources": [source.model_dump() for source in sources],
+                "title": title,
+            },
         )
         resp.raise_for_status()
     except httpx.HTTPStatusError as e:
         raise HTTPException(502, f"scriptgen failed: {e.response.status_code}") from e
     except httpx.RequestError as e:
         raise HTTPException(502, f"scriptgen unreachable: {e}") from e
-    return resp.json()["script"]
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise HTTPException(502, "scriptgen returned invalid json") from e
+    try:
+        return ScriptgenResponse.model_validate(data).script
+    except ValidationError as e:
+        raise HTTPException(502, "scriptgen returned malformed response") from e
 
 
 async def _audiogen(

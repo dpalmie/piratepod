@@ -1,9 +1,15 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ScriptSource(BaseModel):
+    title: str
+    url: str
+    markdown: str
 
 
 class ScriptRequest(BaseModel):
-    markdown: str
     title: str
+    sources: list[ScriptSource] = Field(min_length=1)
 
 
 class StorySegment(BaseModel):

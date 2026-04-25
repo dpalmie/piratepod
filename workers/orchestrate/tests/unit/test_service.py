@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -25,10 +26,11 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
             markdown="Markdown body",
         )
 
-    async def scriptgen(_client, markdown: str, title: str) -> str:
-        assert markdown == "Markdown body"
+    async def scriptgen(_client, sources: list[IngestResponse], title: str) -> str:
+        assert len(sources) == 1
+        assert sources[0].markdown == "Markdown body"
         assert title == "Jina Title"
-        return markdown
+        return sources[0].markdown
 
     async def audiogen(_client, script: str, title: str) -> AudioResponse:
         assert script == "Markdown body"
@@ -60,11 +62,14 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
     monkeypatch.setattr(service, "_audiogen", audiogen)
     monkeypatch.setattr(service, "_publish_to_rss", publish)
 
-    result = asyncio.run(service.generate_podcast(GenerateRequest(url="example.com")))
+    result = asyncio.run(
+        service.generate_podcast(GenerateRequest(urls=["example.com"]))
+    )
 
     assert result.title == "Jina Title"
-    assert result.url == "https://example.com/"
-    assert result.markdown == "Markdown body"
+    assert result.urls == ["https://example.com/"]
+    assert result.sources[0].url == "https://example.com/"
+    assert result.sources[0].markdown == "Markdown body"
     assert result.script == "Markdown body"
     assert result.audio_path == ".piratepod/audio/jina-title.wav"
     assert result.audio_format == "wav"
@@ -81,9 +86,9 @@ def test_generate_podcast_request_title_overrides_ingest_title(monkeypatch) -> N
             markdown="Markdown body",
         )
 
-    async def scriptgen(_client, markdown: str, title: str) -> str:
+    async def scriptgen(_client, sources: list[IngestResponse], title: str) -> str:
         assert title == "Manual Title"
-        return markdown
+        return sources[0].markdown
 
     async def audiogen(_client, script: str, title: str) -> AudioResponse:
         assert title == "Manual Title"
@@ -114,11 +119,135 @@ def test_generate_podcast_request_title_overrides_ingest_title(monkeypatch) -> N
 
     result = asyncio.run(
         service.generate_podcast(
-            GenerateRequest(url="example.com", title="Manual Title")
+            GenerateRequest(urls=["example.com"], title="Manual Title")
         )
     )
 
     assert result.title == "Manual Title"
+
+
+def test_generate_podcast_combines_multiple_urls_into_one_episode(monkeypatch) -> None:
+    ingest_calls: list[str] = []
+    publish_calls: list[str] = []
+
+    async def ingest(_client, url: str) -> IngestResponse:
+        ingest_calls.append(url)
+        if "example.org" in url:
+            return IngestResponse(
+                title="Second Title",
+                url="https://example.org/",
+                markdown="Second markdown",
+            )
+        return IngestResponse(
+            title="First Title",
+            url="https://example.com/",
+            markdown="First markdown",
+        )
+
+    async def scriptgen(_client, sources: list[IngestResponse], title: str) -> str:
+        assert title == "Digest: First Title + 1 more"
+        assert [source.title for source in sources] == ["First Title", "Second Title"]
+        assert [source.markdown for source in sources] == [
+            "First markdown",
+            "Second markdown",
+        ]
+        return "Combined script"
+
+    async def audiogen(_client, script: str, title: str) -> AudioResponse:
+        assert script == "Combined script"
+        assert title == "Digest: First Title + 1 more"
+        return AudioResponse(
+            audio_path=".piratepod/audio/digest.wav",
+            audio_format="wav",
+        )
+
+    async def publish(_client, title: str, script: str, audio: AudioResponse):
+        publish_calls.append(title)
+        assert script == "Combined script"
+        assert audio.audio_format == "wav"
+        return (
+            PodcastResponse(
+                id="podcast-1",
+                slug="feed",
+                title="PiratePod",
+                feed_url="http://localhost:8080/feeds/feed",
+            ),
+            EpisodeResponse(
+                id="episode-1",
+                audio_url="http://localhost:8080/media/feed/episode-1.wav",
+            ),
+        )
+
+    monkeypatch.setattr(service, "_ingest", ingest)
+    monkeypatch.setattr(service, "_scriptgen", scriptgen)
+    monkeypatch.setattr(service, "_audiogen", audiogen)
+    monkeypatch.setattr(service, "_publish_to_rss", publish)
+
+    result = asyncio.run(
+        service.generate_podcast(
+            GenerateRequest(urls=["example.com", "https://example.org"])
+        )
+    )
+
+    assert ingest_calls == ["https://example.com/", "https://example.org/"]
+    assert publish_calls == ["Digest: First Title + 1 more"]
+    assert result.urls == ["https://example.com/", "https://example.org/"]
+    assert [source.title for source in result.sources] == [
+        "First Title",
+        "Second Title",
+    ]
+    assert result.script == "Combined script"
+
+
+def test_scriptgen_sends_all_sources(monkeypatch) -> None:
+    requests: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"script": "Combined script"})
+
+    monkeypatch.setattr(service, "SCRIPTGEN_URL", "http://scriptgen.test")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        script = asyncio.run(
+            service._scriptgen(
+                client,
+                [
+                    IngestResponse(
+                        title="First",
+                        url="https://example.com/",
+                        markdown="First markdown",
+                    ),
+                    IngestResponse(
+                        title="Second",
+                        url="https://example.org/",
+                        markdown="Second markdown",
+                    ),
+                ],
+                "Digest",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert script == "Combined script"
+    assert requests[0].url == "http://scriptgen.test/scriptgen/script"
+    payload = json.loads(requests[0].content)
+    assert payload == {
+        "title": "Digest",
+        "sources": [
+            {
+                "title": "First",
+                "url": "https://example.com/",
+                "markdown": "First markdown",
+            },
+            {
+                "title": "Second",
+                "url": "https://example.org/",
+                "markdown": "Second markdown",
+            },
+        ],
+    }
 
 
 def test_audio_content_type_supports_wav_and_mp3() -> None:
