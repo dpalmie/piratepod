@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
 
-# Packaged silent stub - swapped for real TTS output once we wire a provider.
-SILENCE_PATH = Path(__file__).parent / "assets" / "silence.mp3"
+AUDIOGEN_OUTPUT_DIR = Path(os.getenv("AUDIOGEN_OUTPUT_DIR", ".piratepod/audio"))
+AUDIOGEN_TIMEOUT = float(os.getenv("AUDIOGEN_TIMEOUT", "600"))
+LLAMA_TTS_BIN = os.getenv("LLAMA_TTS_BIN", "llama-tts")

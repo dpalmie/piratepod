@@ -20,9 +20,16 @@ class GenerateResponse(BaseModel):
     title: str
     markdown: str
     script: str
+    audio_path: str
+    audio_format: str
 
 
 class IngestResponse(BaseModel):
     title: str
     url: str
     markdown: str
+
+
+class AudioResponse(BaseModel):
+    audio_path: str
+    audio_format: str

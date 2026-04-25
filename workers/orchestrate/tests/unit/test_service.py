@@ -1,7 +1,7 @@
 import asyncio
 
 import orchestrate.service as service
-from orchestrate.schemas import GenerateRequest, IngestResponse
+from orchestrate.schemas import AudioResponse, GenerateRequest, IngestResponse
 
 
 def test_generate_podcast_uses_ingest_title_when_request_title_missing(
@@ -19,8 +19,17 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
         assert title == "Jina Title"
         return markdown
 
+    async def audiogen(_client, script: str, title: str) -> AudioResponse:
+        assert script == "Markdown body"
+        assert title == "Jina Title"
+        return AudioResponse(
+            audio_path=".piratepod/audio/jina-title.wav",
+            audio_format="wav",
+        )
+
     monkeypatch.setattr(service, "_ingest", ingest)
     monkeypatch.setattr(service, "_scriptgen", scriptgen)
+    monkeypatch.setattr(service, "_audiogen", audiogen)
 
     result = asyncio.run(service.generate_podcast(GenerateRequest(url="example.com")))
 
@@ -28,6 +37,8 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
     assert result.url == "https://example.com/"
     assert result.markdown == "Markdown body"
     assert result.script == "Markdown body"
+    assert result.audio_path == ".piratepod/audio/jina-title.wav"
+    assert result.audio_format == "wav"
 
 
 def test_generate_podcast_request_title_overrides_ingest_title(monkeypatch) -> None:
@@ -42,8 +53,16 @@ def test_generate_podcast_request_title_overrides_ingest_title(monkeypatch) -> N
         assert title == "Manual Title"
         return markdown
 
+    async def audiogen(_client, script: str, title: str) -> AudioResponse:
+        assert title == "Manual Title"
+        return AudioResponse(
+            audio_path=".piratepod/audio/manual-title.wav",
+            audio_format="wav",
+        )
+
     monkeypatch.setattr(service, "_ingest", ingest)
     monkeypatch.setattr(service, "_scriptgen", scriptgen)
+    monkeypatch.setattr(service, "_audiogen", audiogen)
 
     result = asyncio.run(
         service.generate_podcast(
