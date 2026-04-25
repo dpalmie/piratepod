@@ -17,6 +17,12 @@ class GenerateRequest(BaseModel):
 
 class GenerateResponse(BaseModel):
     url: str
-    title: str | None = None
+    title: str
     markdown: str
     script: str
+
+
+class IngestResponse(BaseModel):
+    title: str
+    url: str
+    markdown: str

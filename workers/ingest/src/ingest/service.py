@@ -2,17 +2,19 @@ import os
 
 import httpx
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from piratepod_core.logging import get_logger
 
 from .config import JINA_READER
+from .schemas import UrlResponse
 
 log = get_logger(__name__)
 
 
-async def fetch_url(url: str, *, timeout: float = 30.0) -> str:
-    """Retrieve URL contents and return as markdown string."""
-    headers = {}
+async def fetch_url(url: str, *, timeout: float = 30.0) -> UrlResponse:
+    """Retrieve URL contents and return Jina Reader metadata and markdown."""
+    headers = {"Accept": "application/json"}
     if key := os.getenv("JINA_API_KEY"):
         headers["Authorization"] = f"Bearer {key}"
 
@@ -27,4 +29,16 @@ async def fetch_url(url: str, *, timeout: float = 30.0) -> str:
             raise HTTPException(502, f"fetch failed: {e}") from e
 
     log.info("fetch_url.done", url=url, bytes=len(resp.content))
-    return resp.text
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        raise HTTPException(502, "jina returned invalid json") from e
+
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise HTTPException(502, "jina response missing data")
+
+    try:
+        return UrlResponse.model_validate(data)
+    except ValidationError as e:
+        raise HTTPException(502, "jina returned malformed data") from e

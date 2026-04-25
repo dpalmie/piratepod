@@ -13,14 +13,32 @@ async def test_ingest_url_accepts_with_or_without_scheme(
 ) -> None:
     monkeypatch.setenv("JINA_API_KEY", "test-key")
     expected_outbound = f"{jina_reader_url}https://example.com/"
-    route = jina_mock.get(expected_outbound).respond(200, text="# Example\nbody")
+    route = jina_mock.get(expected_outbound).respond(
+        200,
+        json={
+            "code": 200,
+            "status": 20000,
+            "data": {
+                "title": "Example Domain",
+                "url": "https://example.com/",
+                "content": "# Example\nbody",
+                "publishedTime": "Sat, 18 Apr 2026 00:49:31 GMT",
+            },
+        },
+    )
 
     resp = await client.post("/ingest/url", json={"url": input_url})
 
     assert resp.status_code == 200, resp.text
-    assert resp.text == "# Example\nbody"
+    assert resp.json() == {
+        "title": "Example Domain",
+        "url": "https://example.com/",
+        "published_time": "Sat, 18 Apr 2026 00:49:31 GMT",
+        "markdown": "# Example\nbody",
+    }
     assert route.called and route.call_count == 1
     sent = route.calls.last.request
+    assert sent.headers.get("accept") == "application/json"
     assert sent.headers.get("authorization") == "Bearer test-key"
 
 
@@ -32,7 +50,16 @@ async def test_ingest_url_omits_auth_when_no_key(
 ) -> None:
     monkeypatch.delenv("JINA_API_KEY", raising=False)
     route = jina_mock.get(f"{jina_reader_url}https://example.com/").respond(
-        200, text="ok"
+        200,
+        json={
+            "code": 200,
+            "status": 20000,
+            "data": {
+                "title": "Example Domain",
+                "url": "https://example.com/",
+                "content": "ok",
+            },
+        },
     )
 
     resp = await client.post("/ingest/url", json={"url": "example.com"})

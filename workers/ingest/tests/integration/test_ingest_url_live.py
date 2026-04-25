@@ -20,4 +20,6 @@ async def test_ingest_url_live_jina(require_live: None, input_url: str) -> None:
         resp = await client.post("/ingest/url", json={"url": input_url})
 
     assert resp.status_code == 200, resp.text
-    assert "Example Domain" in resp.text, resp.text[:500]
+    data = resp.json()
+    assert data["title"] == "Example Domain"
+    assert "This domain is for use" in data["markdown"], data["markdown"][:500]

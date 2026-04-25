@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 class UrlRequest(BaseModel):
@@ -12,3 +12,12 @@ class UrlRequest(BaseModel):
         if isinstance(v, str) and "://" not in v:
             return f"https://{v}"
         return v
+
+
+class UrlResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    title: str
+    url: str
+    published_time: str | None = Field(default=None, alias="publishedTime")
+    markdown: str = Field(alias="content")
