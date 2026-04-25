@@ -14,6 +14,10 @@ llm_port         := "8010"
 default:
     @just --list --unsorted
 
+# pytest shared python core
+core-test:
+    uv run --package piratepod-core pytest libs/py/piratepod_core
+
 # pytest workers/ingest (set RUN_LIVE_TESTS=1 to also hit real r.jina.ai)
 ingest-test:
     uv run --package ingest pytest workers/ingest
@@ -32,6 +36,9 @@ audiogen-test:
 
 # pytest all python workers with tests
 workers-test: ingest-test scriptgen-test orchestrate-test audiogen-test
+
+# pytest all python packages
+python-test: core-test workers-test
 
 # check for llama.cpp's llama-tts binary (installed via Homebrew, not uv)
 audiogen-check:
@@ -255,21 +262,22 @@ backend-status:
     check audiogen "http://127.0.0.1:{{audiogen_port}}/healthz"
     check orchestrate "http://127.0.0.1:{{orchestrate_port}}/healthz"
 
-# quick e2e: POST a URL through orchestrate, print the resulting script
-pipeline-smoke url="https://example.com":
+# quick e2e: POST one or more URLs through orchestrate, print the resulting script
+pipeline-smoke urls="https://example.com":
     #!/usr/bin/env bash
     set -euo pipefail
     base="http://localhost:{{orchestrate_port}}"
+    payload=$(URLS="{{urls}}" python3 -c 'import json, os, shlex; urls = shlex.split(os.environ["URLS"]); print(json.dumps({"urls": urls}))')
     resp=$(curl -sS -w $'\n%{http_code}' -X POST "$base/orchestrate/generate" \
         -H 'Content-Type: application/json' \
-        -d "{\"url\":\"{{url}}\"}")
+        -d "$payload")
     status="${resp##*$'\n'}"
     body="${resp%$'\n'*}"
     if [[ "$status" != 2* ]]; then
         printf '%s\n' "$body"
         exit 1
     fi
-    printf '%s' "$body" | python3 -c "import sys,json;d=json.load(sys.stdin);print(f\"title: {d['title']}\");print(f\"url: {d['url']}\");print(f\"feed: {d['feed_url']}\");print(f\"episode audio: {d['episode_audio_url']}\");print(f\"local audio: {d['audio_path']} ({d['audio_format']})\");print();print('--- script ---');print(d['script'])"
+    printf '%s' "$body" | python3 -c "import sys,json;d=json.load(sys.stdin);print(f\"title: {d['title']}\");print('sources:');[print(f\"- {s['title']}: {s['url']}\") for s in d['sources']];print(f\"feed: {d['feed_url']}\");print(f\"episode audio: {d['episode_audio_url']}\");print(f\"local audio: {d['audio_path']} ({d['audio_format']})\");print();print('--- script ---');print(d['script'])"
 
 # run the rss service locally (uses ./services/rss/data for sqlite + media)
 rss-run:
