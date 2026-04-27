@@ -30,6 +30,7 @@ func New(cfg *config.Config, repo *db.Repo, store storage.Storage, authz auth.Au
 	require := auth.RequireOwner(authz)
 	mux.Handle("POST /podcasts", require(http.HandlerFunc(h.createPodcast)))
 	mux.Handle("GET /podcasts", require(http.HandlerFunc(h.listPodcasts)))
+	mux.Handle("GET /podcasts/{id}/episodes", require(http.HandlerFunc(h.listEpisodes)))
 	mux.Handle("POST /podcasts/{id}/episodes", require(http.HandlerFunc(h.createEpisode)))
 	mux.Handle("DELETE /podcasts/{id}", require(http.HandlerFunc(h.deletePodcast)))
 

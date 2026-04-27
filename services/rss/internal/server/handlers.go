@@ -190,6 +190,38 @@ func (h *Handler) createEpisode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, episodeDTO(episode))
 }
 
+func (h *Handler) listEpisodes(w http.ResponseWriter, r *http.Request) {
+	ownerID, ok := auth.OwnerFrom(r.Context())
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	podcastID := r.PathValue("id")
+	p, err := h.repo.GetPodcastByID(r.Context(), podcastID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.serverError(w, "load podcast", err)
+		return
+	}
+	if p.OwnerID != ownerID {
+		http.NotFound(w, r)
+		return
+	}
+	episodes, err := h.repo.ListEpisodesByPodcastID(r.Context(), podcastID)
+	if err != nil {
+		h.serverError(w, "list episodes", err)
+		return
+	}
+	out := make([]map[string]any, 0, len(episodes))
+	for _, episode := range episodes {
+		out = append(out, episodeDTO(episode))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	p, err := h.repo.GetPodcastBySlug(r.Context(), slug)

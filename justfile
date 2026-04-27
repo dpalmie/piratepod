@@ -8,6 +8,8 @@ ingest_port      := "8001"
 scriptgen_port   := "8002"
 orchestrate_port := "8003"
 audiogen_port    := "8004"
+api_port         := "8000"
+web_port         := "5173"
 llm_port         := "8010"
 
 # list all recipes
@@ -190,6 +192,129 @@ backend-run: scriptgen-llm-check audiogen-check
     echo "Press Ctrl+C to stop."
     while true; do sleep 3600; done
 
+# start backend services, API, and web app; Ctrl+C stops everything it started
+app-run-web: scriptgen-llm-check audiogen-check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .piratepod/logs .piratepod/pids
+    echo "$$" > .piratepod/pids/app-run-web.pid
+
+    names=(web api app-backend)
+    cleanup_started=0
+
+    kill_tree() {
+        local pid="$1"
+        for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+            kill_tree "$child"
+        done
+        kill "$pid" 2>/dev/null || true
+    }
+
+    kill_port() {
+        local port="$1"
+        for pid in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true); do
+            kill_tree "$pid"
+        done
+    }
+
+    cleanup() {
+        local exit_code="${1:-0}"
+        set +e
+        trap - EXIT INT TERM
+        if [[ "$cleanup_started" -eq 1 ]]; then
+            exit "$exit_code"
+        fi
+        cleanup_started=1
+        echo
+        echo "stopping web app stack..."
+        for name in "${names[@]}"; do
+            pid_file=".piratepod/pids/${name}.pid"
+            if [[ -f "$pid_file" ]]; then
+                pid="$(cat "$pid_file")"
+                if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                    kill_tree "$pid"
+                fi
+                rm -f "$pid_file"
+            fi
+        done
+        for name in backend-run rss scriptgen-llm ingest scriptgen audiogen orchestrate; do
+            pid_file=".piratepod/pids/${name}.pid"
+            if [[ -f "$pid_file" ]]; then
+                pid="$(cat "$pid_file")"
+                if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                    kill_tree "$pid"
+                fi
+                rm -f "$pid_file"
+            fi
+        done
+        for port in {{web_port}} {{api_port}} {{orchestrate_port}} {{audiogen_port}} {{scriptgen_port}} {{ingest_port}} {{llm_port}} 8080; do
+            kill_port "$port"
+        done
+        rm -f .piratepod/pids/app-run-web.pid
+        exit "$exit_code"
+    }
+    trap 'cleanup 130' INT TERM
+    trap 'cleanup $?' EXIT
+
+    start() {
+        local name="$1"
+        shift
+        local log=".piratepod/logs/${name}.log"
+        local pid_file=".piratepod/pids/${name}.pid"
+        if [[ -f "$pid_file" ]] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+            echo "$name already running with pid $(cat "$pid_file")"
+            exit 1
+        fi
+        echo "starting $name -> $log"
+        "$@" >"$log" 2>&1 &
+        echo "$!" > "$pid_file"
+    }
+
+    wait_http() {
+        local name="$1"
+        local url="$2"
+        local tries="${3:-180}"
+        local pid_file=".piratepod/pids/${name}.pid"
+        for _ in $(seq 1 "$tries"); do
+            if curl -fsS "$url" >/dev/null 2>&1; then
+                echo "$name ready"
+                return 0
+            fi
+            if [[ -f "$pid_file" ]]; then
+                pid="$(cat "$pid_file")"
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    echo "$name exited early; log:"
+                    tail -40 ".piratepod/logs/${name}.log" || true
+                    exit 1
+                fi
+            fi
+            sleep 1
+        done
+        echo "$name did not become ready at $url; log:"
+        tail -40 ".piratepod/logs/${name}.log" || true
+        exit 1
+    }
+
+    start app-backend just backend-run
+    wait_http app-backend "http://127.0.0.1:{{orchestrate_port}}/healthz" 720
+
+    start api bash -c 'workspace="$PWD"; cd services/api && exec env PIRATEPOD_WORKSPACE_DIR="$workspace" PIRATEPOD_API_PORT={{api_port}} PIRATEPOD_WEB_ORIGIN=http://127.0.0.1:{{web_port}},http://localhost:{{web_port}} INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 go run ./cmd/api'
+    wait_http api "http://127.0.0.1:{{api_port}}/healthz" 60
+
+    start web env VITE_API_URL=http://127.0.0.1:{{api_port}} npm --prefix clients/web run dev -- --host 127.0.0.1 --port {{web_port}}
+    wait_http web "http://127.0.0.1:{{web_port}}" 60
+
+    echo
+    echo "web app stack ready"
+    echo "web:         http://127.0.0.1:{{web_port}}"
+    echo "api:         http://127.0.0.1:{{api_port}}"
+    echo "orchestrate: http://127.0.0.1:{{orchestrate_port}}"
+    echo "rss:         http://127.0.0.1:8080"
+    echo "logs:        .piratepod/logs"
+    echo
+    echo "Press Ctrl+C to stop."
+    while true; do sleep 3600; done
+
 # stop backend services started by backend-run
 backend-stop:
     #!/usr/bin/env bash
@@ -261,6 +386,37 @@ backend-status:
     check scriptgen "http://127.0.0.1:{{scriptgen_port}}/healthz"
     check audiogen "http://127.0.0.1:{{audiogen_port}}/healthz"
     check orchestrate "http://127.0.0.1:{{orchestrate_port}}/healthz"
+
+# run the self-host web API locally
+api-run:
+    workspace="$PWD"; cd services/api && PIRATEPOD_WORKSPACE_DIR="$workspace" PIRATEPOD_API_PORT={{api_port}} go run ./cmd/api
+
+# gofmt -s -w services/api
+api-fmt:
+    cd services/api && gofmt -s -w .
+
+# go vet ./... for services/api
+api-vet:
+    cd services/api && go vet ./...
+
+# go test ./... for services/api
+api-test:
+    cd services/api && go test ./...
+
+# build the API service
+api-build:
+    cd services/api && go build -trimpath -ldflags="-s -w" -o bin/api ./cmd/api
+
+# fmt + vet + test for services/api
+api-check: api-fmt api-vet api-test
+
+# run the web app locally
+web-run:
+    cd clients/web && npm run dev -- --host 127.0.0.1 --port {{web_port}}
+
+# typecheck and build the web app
+web-check:
+    cd clients/web && npm run typecheck && npm run build
 
 # quick e2e: POST one or more URLs through orchestrate, print the resulting script
 pipeline-smoke urls="https://example.com":

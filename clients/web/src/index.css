@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 48 23% 95%;
+    --foreground: 0 0% 0%;
+    --card: 48 23% 95%;
+    --card-foreground: 0 0% 0%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 48 23% 95%;
+    --secondary: 45 15% 88%;
+    --secondary-foreground: 0 0% 0%;
+    --muted: 45 15% 88%;
+    --muted-foreground: 0 0% 32%;
+    --accent: 45 15% 88%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 0 72% 36%;
+    --destructive-foreground: 48 23% 95%;
+    --border: 0 0% 0%;
+    --input: 0 0% 0%;
+    --ring: 0 0% 0%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased font-mono;
+  }
+
+  .brand-wordmark {
+    font-family: "Instrument Serif", Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+  }
+}
