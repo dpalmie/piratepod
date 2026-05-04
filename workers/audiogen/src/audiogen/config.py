@@ -3,4 +3,10 @@ from pathlib import Path
 
 AUDIOGEN_OUTPUT_DIR = Path(os.getenv("AUDIOGEN_OUTPUT_DIR", ".piratepod/audio"))
 AUDIOGEN_TIMEOUT = float(os.getenv("AUDIOGEN_TIMEOUT", "600"))
+AUDIOGEN_MAX_CHARS_PER_CHUNK = int(
+    os.getenv("AUDIOGEN_MAX_CHARS_PER_CHUNK", "350")
+)
+AUDIOGEN_TTS_TOKENS_PER_WORD = int(os.getenv("AUDIOGEN_TTS_TOKENS_PER_WORD", "100"))
+AUDIOGEN_TTS_MIN_PREDICT = int(os.getenv("AUDIOGEN_TTS_MIN_PREDICT", "4096"))
+AUDIOGEN_TTS_MAX_PREDICT = int(os.getenv("AUDIOGEN_TTS_MAX_PREDICT", "65536"))
 LLAMA_TTS_BIN = os.getenv("LLAMA_TTS_BIN", "llama-tts")
