@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import httpx
@@ -21,6 +22,7 @@ from .config import (
 from .schemas import (
     AudioResponse,
     EpisodeResponse,
+    FeedResponse,
     GenerateRequest,
     GenerateResponse,
     IngestResponse,
@@ -31,16 +33,30 @@ from .schemas import (
 
 log = get_logger(__name__)
 
+StageFunc = Callable[[str, str], Awaitable[None]]
+_podcast_lock = asyncio.Lock()
+
 
 async def generate_podcast(req: GenerateRequest) -> GenerateResponse:
+    return await run_pipeline(req)
+
+
+async def run_pipeline(
+    req: GenerateRequest,
+    set_stage: StageFunc | None = None,
+) -> GenerateResponse:
     urls = [str(url) for url in req.urls]
     log.info("orchestrate.start", urls=urls, url_count=len(urls), title=req.title)
 
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        await _set_stage(set_stage, "ingest", "ingesting source URLs")
         sources = list(await asyncio.gather(*(_ingest(client, url) for url in urls)))
         title = _episode_title(req.title, sources)
+        await _set_stage(set_stage, "script", "generating podcast script")
         script = await _scriptgen(client, sources, title)
+        await _set_stage(set_stage, "audio", "generating audio")
         audio = await _audiogen(client, script, title)
+        await _set_stage(set_stage, "publish", "publishing episode to RSS")
         podcast, episode = await _publish_to_rss(client, title, script, audio)
 
     log.info(
@@ -63,6 +79,18 @@ async def generate_podcast(req: GenerateRequest) -> GenerateResponse:
         episode_id=episode.id,
         episode_audio_url=episode.audio_url,
     )
+
+
+async def fetch_feed() -> FeedResponse:
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        podcast = await _ensure_self_host_podcast(client)
+        episodes = await _list_episodes(client, podcast.id)
+    return FeedResponse(podcast=podcast, episodes=episodes)
+
+
+async def _set_stage(set_stage: StageFunc | None, stage: str, message: str) -> None:
+    if set_stage is not None:
+        await set_stage(stage, message)
 
 
 async def _ingest(client: httpx.AsyncClient, url: str) -> IngestResponse:
@@ -152,6 +180,13 @@ async def _publish_to_rss(
 
 
 async def _ensure_self_host_podcast(client: httpx.AsyncClient) -> PodcastResponse:
+    async with _podcast_lock:
+        return await _ensure_self_host_podcast_locked(client)
+
+
+async def _ensure_self_host_podcast_locked(
+    client: httpx.AsyncClient,
+) -> PodcastResponse:
     try:
         resp = await client.get(f"{RSS_URL}/podcasts")
         resp.raise_for_status()
@@ -183,6 +218,32 @@ async def _ensure_self_host_podcast(client: httpx.AsyncClient) -> PodcastRespons
             f"rss self-host expected exactly one podcast, found {len(podcasts)}",
         )
     return await _create_default_podcast(client)
+
+
+async def _list_episodes(
+    client: httpx.AsyncClient, podcast_id: str
+) -> list[EpisodeResponse]:
+    try:
+        resp = await client.get(f"{RSS_URL}/podcasts/{podcast_id}/episodes")
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            502,
+            f"rss list episodes failed: {e.response.status_code}",
+        ) from e
+    except httpx.RequestError as e:
+        raise HTTPException(502, f"rss unreachable: {e}") from e
+
+    try:
+        data = resp.json()
+    except ValueError as e:
+        raise HTTPException(502, "rss returned invalid episodes json") from e
+    if not isinstance(data, list):
+        raise HTTPException(502, "rss returned malformed episodes response")
+    try:
+        return [EpisodeResponse.model_validate(item) for item in data]
+    except ValidationError as e:
+        raise HTTPException(502, "rss returned malformed episode") from e
 
 
 async def _create_default_podcast(client: httpx.AsyncClient) -> PodcastResponse:

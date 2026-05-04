@@ -5,6 +5,11 @@ INGEST_URL = os.getenv("INGEST_URL", "http://localhost:8001")
 RSS_URL = os.getenv("RSS_URL", "http://localhost:8080")
 SCRIPTGEN_URL = os.getenv("SCRIPTGEN_URL", "http://localhost:8002")
 HTTP_TIMEOUT = float(os.getenv("ORCHESTRATE_HTTP_TIMEOUT", "60"))
+ORCHESTRATE_SQLITE_PATH = os.getenv(
+    "ORCHESTRATE_SQLITE_PATH",
+    ".piratepod/orchestrate.db",
+)
+ORCHESTRATE_POLL_INTERVAL = float(os.getenv("ORCHESTRATE_POLL_INTERVAL", "1"))
 
 DEFAULT_PODCAST_AUTHOR = os.getenv("PIRATEPOD_DEFAULT_AUTHOR", "")
 DEFAULT_PODCAST_DESCRIPTION = os.getenv(

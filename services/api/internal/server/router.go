@@ -6,20 +6,17 @@ import (
 
 	"github.com/piratepod/api/internal/auth"
 	"github.com/piratepod/api/internal/config"
-	"github.com/piratepod/api/internal/db"
-	"github.com/piratepod/api/internal/pipeline"
+	"github.com/piratepod/api/internal/orchestrate"
 )
 
 type Handler struct {
 	cfg    *config.Config
-	repo   *db.Repo
-	client *pipeline.Client
-	wake   func()
+	client *orchestrate.Client
 	log    *slog.Logger
 }
 
-func New(cfg *config.Config, repo *db.Repo, client *pipeline.Client, authz auth.Authorizer, wake func(), log *slog.Logger) http.Handler {
-	h := &Handler{cfg: cfg, repo: repo, client: client, wake: wake, log: log}
+func New(cfg *config.Config, client *orchestrate.Client, authz auth.Authorizer, log *slog.Logger) http.Handler {
+	h := &Handler{cfg: cfg, client: client, log: log}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.healthz)
 

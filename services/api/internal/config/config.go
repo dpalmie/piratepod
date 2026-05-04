@@ -25,11 +25,12 @@ type Config struct {
 
 	SQLitePath string
 
-	IngestURL    string
-	ScriptgenURL string
-	AudiogenURL  string
-	RSSURL       string
-	HTTPTimeout  int
+	IngestURL      string
+	ScriptgenURL   string
+	AudiogenURL    string
+	RSSURL         string
+	OrchestrateURL string
+	HTTPTimeout    int
 
 	DefaultPodcastTitle       string
 	DefaultPodcastDescription string
@@ -70,6 +71,7 @@ func Load() (*Config, error) {
 	cfg.ScriptgenURL = strings.TrimRight(getenv("SCRIPTGEN_URL", "http://localhost:8002"), "/")
 	cfg.AudiogenURL = strings.TrimRight(getenv("AUDIOGEN_URL", "http://localhost:8004"), "/")
 	cfg.RSSURL = strings.TrimRight(getenv("RSS_URL", "http://localhost:8080"), "/")
+	cfg.OrchestrateURL = strings.TrimRight(getenv("ORCHESTRATE_URL", "http://localhost:8003"), "/")
 	cfg.DefaultPodcastTitle = getenv("PIRATEPOD_DEFAULT_TITLE", "PiratePod")
 	cfg.DefaultPodcastDescription = getenv("PIRATEPOD_DEFAULT_DESCRIPTION", "Generated episodes from PiratePod")
 	cfg.DefaultPodcastAuthor = getenv("PIRATEPOD_DEFAULT_AUTHOR", "")
@@ -90,7 +92,7 @@ func Load() (*Config, error) {
 	if cfg.HTTPTimeout <= 0 {
 		errs = append(errs, errors.New("PIRATEPOD_API_HTTP_TIMEOUT must be positive"))
 	}
-	if cfg.IngestURL == "" || cfg.ScriptgenURL == "" || cfg.AudiogenURL == "" || cfg.RSSURL == "" {
+	if cfg.IngestURL == "" || cfg.ScriptgenURL == "" || cfg.AudiogenURL == "" || cfg.RSSURL == "" || cfg.OrchestrateURL == "" {
 		errs = append(errs, errors.New("upstream service URLs must be non-empty"))
 	}
 

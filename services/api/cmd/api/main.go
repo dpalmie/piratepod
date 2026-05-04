@@ -14,8 +14,7 @@ import (
 
 	"github.com/piratepod/api/internal/auth"
 	"github.com/piratepod/api/internal/config"
-	"github.com/piratepod/api/internal/db"
-	"github.com/piratepod/api/internal/pipeline"
+	"github.com/piratepod/api/internal/orchestrate"
 	"github.com/piratepod/api/internal/server"
 )
 
@@ -35,27 +34,18 @@ func run() error {
 	log.Info("starting api service",
 		slog.String("mode", string(cfg.Mode)),
 		slog.Int("port", cfg.Port),
-		slog.String("rss_url", cfg.RSSURL),
+		slog.String("orchestrate_url", cfg.OrchestrateURL),
 	)
 
-	database, err := db.OpenSQLite(cfg.SQLitePath)
-	if err != nil {
-		return err
-	}
-	defer database.Close()
-
-	repo := db.NewRepo(database)
-	client := pipeline.NewClient(cfg)
-	worker := pipeline.NewWorker(repo, client, log)
+	client := orchestrate.NewClient(cfg)
 	authz := auth.SelfAuth{}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	worker.Start(ctx)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           server.New(cfg, repo, client, authz, worker.Wake, log),
+		Handler:           server.New(cfg, client, authz, log),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

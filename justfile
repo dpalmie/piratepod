@@ -68,7 +68,7 @@ audiogen-run: audiogen-check
 
 # uvicorn workers/orchestrate with auto-reload (needs rss-run + scriptgen-llm-run + ingest-run + scriptgen-run + audiogen-run alongside)
 orchestrate-run:
-    uv run --package orchestrate uvicorn orchestrate.app:app --reload --port {{orchestrate_port}}
+    ORCHESTRATE_SQLITE_PATH=services/api/data/piratepod-api.db uv run --package orchestrate uvicorn orchestrate.app:app --reload --port {{orchestrate_port}}
 
 # start all local backend services; Ctrl+C stops everything it started
 backend-run: scriptgen-llm-check audiogen-check
@@ -178,7 +178,7 @@ backend-run: scriptgen-llm-check audiogen-check
     start audiogen uv run --package audiogen uvicorn audiogen.app:app --host 127.0.0.1 --port {{audiogen_port}}
     wait_http audiogen "http://127.0.0.1:{{audiogen_port}}/healthz" 60
 
-    start orchestrate env INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 uv run --package orchestrate uvicorn orchestrate.app:app --host 127.0.0.1 --port {{orchestrate_port}}
+    start orchestrate env INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 ORCHESTRATE_SQLITE_PATH=services/api/data/piratepod-api.db uv run --package orchestrate uvicorn orchestrate.app:app --host 127.0.0.1 --port {{orchestrate_port}}
     wait_http orchestrate "http://127.0.0.1:{{orchestrate_port}}/healthz" 60
 
     echo
@@ -298,7 +298,7 @@ app-run-web: scriptgen-llm-check audiogen-check
     start app-backend just backend-run
     wait_http app-backend "http://127.0.0.1:{{orchestrate_port}}/healthz" 720
 
-    start api bash -c 'workspace="$PWD"; cd services/api && exec env PIRATEPOD_WORKSPACE_DIR="$workspace" PIRATEPOD_API_PORT={{api_port}} PIRATEPOD_WEB_ORIGIN=http://127.0.0.1:{{web_port}},http://localhost:{{web_port}} INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 go run ./cmd/api'
+    start api bash -c 'workspace="$PWD"; cd services/api && exec env PIRATEPOD_WORKSPACE_DIR="$workspace" PIRATEPOD_API_PORT={{api_port}} PIRATEPOD_WEB_ORIGIN=http://127.0.0.1:{{web_port}},http://localhost:{{web_port}} ORCHESTRATE_URL=http://127.0.0.1:{{orchestrate_port}} INGEST_URL=http://127.0.0.1:{{ingest_port}} SCRIPTGEN_URL=http://127.0.0.1:{{scriptgen_port}} AUDIOGEN_URL=http://127.0.0.1:{{audiogen_port}} RSS_URL=http://127.0.0.1:8080 go run ./cmd/api'
     wait_http api "http://127.0.0.1:{{api_port}}/healthz" 60
 
     start web env VITE_API_URL=http://127.0.0.1:{{api_port}} npm --prefix clients/web run dev -- --host 127.0.0.1 --port {{web_port}}
