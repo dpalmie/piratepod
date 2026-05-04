@@ -199,6 +199,54 @@ def test_generate_podcast_combines_multiple_urls_into_one_episode(monkeypatch) -
     assert result.script == "Combined script"
 
 
+def test_run_pipeline_reports_stage_progress(monkeypatch) -> None:
+    stages: list[tuple[str, str]] = []
+
+    async def ingest(_client, _url: str) -> IngestResponse:
+        return IngestResponse(
+            title="Jina Title",
+            url="https://example.com/",
+            markdown="Markdown body",
+        )
+
+    async def scriptgen(_client, _sources: list[IngestResponse], _title: str) -> str:
+        return "Script"
+
+    async def audiogen(_client, _script: str, _title: str) -> AudioResponse:
+        return AudioResponse(audio_path=".piratepod/audio/episode.wav", audio_format="wav")
+
+    async def publish(_client, _title: str, _script: str, _audio: AudioResponse):
+        return (
+            PodcastResponse(
+                id="podcast-1",
+                slug="feed",
+                title="PiratePod",
+                feed_url="http://localhost:8080/feeds/feed",
+            ),
+            EpisodeResponse(
+                id="episode-1",
+                audio_url="http://localhost:8080/media/feed/episode-1.wav",
+            ),
+        )
+
+    async def set_stage(stage: str, message: str) -> None:
+        stages.append((stage, message))
+
+    monkeypatch.setattr(service, "_ingest", ingest)
+    monkeypatch.setattr(service, "_scriptgen", scriptgen)
+    monkeypatch.setattr(service, "_audiogen", audiogen)
+    monkeypatch.setattr(service, "_publish_to_rss", publish)
+
+    asyncio.run(service.run_pipeline(GenerateRequest(urls=["example.com"]), set_stage))
+
+    assert [stage for stage, _message in stages] == [
+        "ingest",
+        "script",
+        "audio",
+        "publish",
+    ]
+
+
 def test_scriptgen_sends_all_sources(monkeypatch) -> None:
     requests: list[httpx.Request] = []
 
