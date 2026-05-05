@@ -20,7 +20,7 @@ def test_generate_audio_runs_llama_tts(monkeypatch, tmp_path: Path) -> None:
         seen_cmds.append(cmd)
         prompt_path = Path(cmd[cmd.index("-f") + 1])
         seen_prompts.append(prompt_path.read_text())
-        Path(cmd[-1]).write_bytes(b"wav")
+        write_wav(Path(cmd[-1]), frames=8000, amplitude=1000)
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(service.subprocess, "run", run)
@@ -133,10 +133,47 @@ def test_concat_wavs_rejects_incompatible_formats(tmp_path: Path) -> None:
     assert exc.value.status_code == 502
 
 
-def write_wav(path: Path, *, frames: int, framerate: int = 8000) -> Path:
+def test_validate_chunk_audio_rejects_silent_audio(tmp_path: Path) -> None:
+    path = write_wav(tmp_path / "silent.wav", frames=8000 * 5, amplitude=0)
+
+    with pytest.raises(HTTPException) as exc:
+        service._validate_chunk_audio(path, "This paragraph should not become silence.")
+
+    assert exc.value.status_code == 502
+    assert "silent" in exc.value.detail
+
+
+def test_generate_chunks_retries_silent_chunk(monkeypatch, tmp_path: Path) -> None:
+    attempts = 0
+    monkeypatch.setattr(service, "AUDIOGEN_CHUNK_MAX_ATTEMPTS", 2)
+
+    def run_tts(_binary: str, _text: str, out_path: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        amplitude = 0 if attempts == 1 else 1000
+        write_wav(out_path, frames=8000, amplitude=amplitude)
+
+    monkeypatch.setattr(service, "_run_llama_tts", run_tts)
+    out = tmp_path / "episode.wav"
+
+    service._generate_chunks("llama-tts", ["Hello from PiratePod."], out)
+
+    assert attempts == 2
+    assert out.exists()
+    assert list(tmp_path.glob("failed-*.wav"))
+
+
+def write_wav(
+    path: Path,
+    *,
+    frames: int,
+    framerate: int = 8000,
+    amplitude: int = 1000,
+) -> Path:
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(2)
         wav.setframerate(framerate)
-        wav.writeframes(b"\0\0" * frames)
+        frame = int(amplitude).to_bytes(2, "little", signed=True)
+        wav.writeframes(frame * frames)
     return path

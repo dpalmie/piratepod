@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,8 +11,12 @@ from fastapi import HTTPException
 from piratepod_core.logging import get_logger
 
 from .config import (
+    AUDIOGEN_CHUNK_MAX_ATTEMPTS,
     AUDIOGEN_MAX_CHARS_PER_CHUNK,
+    AUDIOGEN_MIN_SECONDS_PER_WORD,
+    AUDIOGEN_MIN_VOICED_RATIO,
     AUDIOGEN_OUTPUT_DIR,
+    AUDIOGEN_SILENCE_RMS_THRESHOLD,
     AUDIOGEN_TIMEOUT,
     AUDIOGEN_TTS_MAX_PREDICT,
     AUDIOGEN_TTS_MIN_PREDICT,
@@ -21,6 +26,13 @@ from .config import (
 from .schemas import AudioRequest, AudioResponse
 
 log = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class AudioStats:
+    duration_sec: float
+    rms: int
+    voiced_ratio: float
 
 
 def generate_audio(req: AudioRequest) -> AudioResponse:
@@ -69,8 +81,10 @@ def _generate_chunks(binary: str, chunks: list[str], out_path: Path) -> None:
         for index in range(1, len(chunks) + 1)
     ]
     try:
-        for chunk, part_path in zip(chunks, part_paths, strict=True):
-            _run_llama_tts(binary, chunk, part_path)
+        for index, (chunk, part_path) in enumerate(
+            zip(chunks, part_paths, strict=True), start=1
+        ):
+            _generate_valid_chunk(binary, chunk, part_path, index, len(chunks))
         if len(part_paths) == 1:
             part_paths[0].replace(out_path)
         else:
@@ -78,6 +92,53 @@ def _generate_chunks(binary: str, chunks: list[str], out_path: Path) -> None:
     finally:
         for path in part_paths:
             path.unlink(missing_ok=True)
+
+
+def _generate_valid_chunk(
+    binary: str,
+    text: str,
+    part_path: Path,
+    index: int,
+    total: int,
+) -> None:
+    for attempt in range(1, AUDIOGEN_CHUNK_MAX_ATTEMPTS + 1):
+        part_path.unlink(missing_ok=True)
+        _run_llama_tts(binary, text, part_path)
+        try:
+            stats = _validate_chunk_audio(part_path, text)
+        except HTTPException as e:
+            failed_path = _preserve_failed_chunk(part_path, attempt)
+            log.warning(
+                "audiogen.chunk.invalid",
+                chunk=index,
+                chunks=total,
+                attempt=attempt,
+                error=e.detail,
+                failed_audio=str(failed_path) if failed_path else "",
+                preview=_preview(text),
+            )
+            if attempt >= AUDIOGEN_CHUNK_MAX_ATTEMPTS:
+                raise HTTPException(
+                    502,
+                    (
+                        f"audiogen chunk {index}/{total} failed audio QA after "
+                        f"{attempt} attempts: {e.detail}; preview={_preview(text)!r}"
+                    ),
+                ) from e
+            continue
+
+        log.info(
+            "audiogen.chunk.ok",
+            chunk=index,
+            chunks=total,
+            attempt=attempt,
+            chars=len(text),
+            words=len(text.split()),
+            duration_sec=round(stats.duration_sec, 2),
+            rms=stats.rms,
+            voiced_ratio=round(stats.voiced_ratio, 3),
+        )
+        return
 
 
 def _run_llama_tts(binary: str, text: str, out_path: Path) -> None:
@@ -102,6 +163,86 @@ def _run_llama_tts(binary: str, text: str, out_path: Path) -> None:
         )
     finally:
         prompt_path.unlink(missing_ok=True)
+
+
+def _validate_chunk_audio(path: Path, text: str) -> AudioStats:
+    stats = _audio_stats(path)
+    words = len(text.split())
+    min_duration = max(0.5, words * AUDIOGEN_MIN_SECONDS_PER_WORD)
+    if stats.duration_sec < min_duration:
+        raise HTTPException(
+            502,
+            (
+                "chunk audio too short "
+                f"({stats.duration_sec:.2f}s for {words} words; "
+                f"min {min_duration:.2f}s)"
+            ),
+        )
+    if stats.rms < AUDIOGEN_SILENCE_RMS_THRESHOLD:
+        raise HTTPException(502, f"chunk audio is silent (rms={stats.rms})")
+    if stats.duration_sec >= 2 and stats.voiced_ratio < AUDIOGEN_MIN_VOICED_RATIO:
+        raise HTTPException(
+            502,
+            (
+                "chunk audio is mostly silent "
+                f"(voiced_ratio={stats.voiced_ratio:.3f}, rms={stats.rms})"
+            ),
+        )
+    return stats
+
+
+def _audio_stats(path: Path) -> AudioStats:
+    with wave.open(str(path), "rb") as wav:
+        frames = wav.getnframes()
+        framerate = wav.getframerate()
+        sample_width = wav.getsampwidth()
+        channels = wav.getnchannels()
+        raw = wav.readframes(frames)
+
+    duration = frames / framerate if framerate > 0 else 0
+    if not raw or sample_width <= 0 or channels <= 0:
+        return AudioStats(duration_sec=duration, rms=0, voiced_ratio=0)
+
+    samples = _pcm_samples(raw, sample_width)
+    rms = _rms(samples)
+    window_size = max(1, int(framerate * channels * 0.25))
+    windows = [
+        samples[offset : offset + window_size]
+        for offset in range(0, len(samples), window_size)
+    ]
+    voiced = sum(1 for window in windows if _rms(window) >= AUDIOGEN_SILENCE_RMS_THRESHOLD)
+    voiced_ratio = voiced / len(windows) if windows else 0
+    return AudioStats(duration_sec=duration, rms=rms, voiced_ratio=voiced_ratio)
+
+
+def _pcm_samples(raw: bytes, sample_width: int) -> list[int]:
+    if sample_width == 1:
+        return [sample - 128 for sample in raw]
+    if sample_width == 2:
+        return [
+            int.from_bytes(raw[i : i + 2], "little", signed=True)
+            for i in range(0, len(raw) - 1, 2)
+        ]
+    if sample_width == 4:
+        return [
+            int.from_bytes(raw[i : i + 4], "little", signed=True) >> 16
+            for i in range(0, len(raw) - 3, 4)
+        ]
+    raise HTTPException(502, f"unsupported wav sample width: {sample_width}")
+
+
+def _rms(samples: list[int]) -> int:
+    if not samples:
+        return 0
+    return int((sum(sample * sample for sample in samples) / len(samples)) ** 0.5)
+
+
+def _preserve_failed_chunk(path: Path, attempt: int) -> Path | None:
+    if not path.exists():
+        return None
+    failed_path = path.with_name(f"failed-{path.stem}-attempt-{attempt}{path.suffix}")
+    path.replace(failed_path)
+    return failed_path
 
 
 def _write_prompt_file(text: str) -> Path:
@@ -196,6 +337,10 @@ def _predict_tokens(text: str) -> int:
     words = len(text.split())
     estimate = max(AUDIOGEN_TTS_MIN_PREDICT, words * AUDIOGEN_TTS_TOKENS_PER_WORD)
     return min(estimate, AUDIOGEN_TTS_MAX_PREDICT)
+
+
+def _preview(text: str) -> str:
+    return " ".join(text.split())[:160]
 
 
 def _safe_stem(title: str) -> str:
