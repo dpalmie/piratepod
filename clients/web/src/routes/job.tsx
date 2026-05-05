@@ -2,7 +2,7 @@ import { useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '@tanstack/react-store'
 import { toast } from 'sonner'
-import { Copy, Loader2, RefreshCcw } from 'lucide-react'
+import { Loader2, RefreshCcw } from 'lucide-react'
 import { StageProgress } from '@/components/stage-progress'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -94,22 +94,6 @@ export function JobPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Timeline</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {data.events?.map((event) => (
-            <div key={event.id} className="flex items-start justify-between gap-4 border-b pb-3 last:border-0">
-              <div>
-                <p className="text-sm font-medium">{event.stage} · {event.status}</p>
-                {event.message ? <p className="text-sm text-muted-foreground">{event.message}</p> : null}
-              </div>
-              <time className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleTimeString()}</time>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   )
 }
