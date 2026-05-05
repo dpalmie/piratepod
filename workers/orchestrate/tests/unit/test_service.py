@@ -24,6 +24,7 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
             title="Jina Title",
             url="https://example.com/",
             markdown="Markdown body",
+            image_url="https://cdn.example.com/card.jpg",
         )
 
     async def scriptgen(_client, sources: list[IngestResponse], title: str) -> str:
@@ -70,6 +71,7 @@ def test_generate_podcast_uses_ingest_title_when_request_title_missing(
     assert result.urls == ["https://example.com/"]
     assert result.sources[0].url == "https://example.com/"
     assert result.sources[0].markdown == "Markdown body"
+    assert result.sources[0].image_url == "https://cdn.example.com/card.jpg"
     assert result.script == "Markdown body"
     assert result.audio_path == ".piratepod/audio/jina-title.wav"
     assert result.audio_format == "wav"
@@ -265,6 +267,7 @@ def test_scriptgen_sends_all_sources(monkeypatch) -> None:
                         title="First",
                         url="https://example.com/",
                         markdown="First markdown",
+                        image_url="https://cdn.example.com/card.jpg",
                     ),
                     IngestResponse(
                         title="Second",

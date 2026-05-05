@@ -2,7 +2,7 @@ import { useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useStore } from '@tanstack/react-store'
 import { toast } from 'sonner'
-import { Loader2, RefreshCcw } from 'lucide-react'
+import { Hash, Loader2, RefreshCcw, Rss } from 'lucide-react'
 import { StageProgress } from '@/components/stage-progress'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -42,11 +42,34 @@ export function JobPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="border-b">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
+            <div className="min-w-0">
               <CardTitle className="text-2xl">{result?.title || data.title || 'Podcast job'}</CardTitle>
-              <CardDescription>{data.id}</CardDescription>
+              <CardDescription className="mt-1 flex items-center gap-1">
+                <Button
+                  aria-label="Click to copy job ID"
+                  title="Click to copy job ID"
+                  variant="ghost"
+                  size="icon"
+                  className="-ml-1 h-7 w-7 text-muted-foreground"
+                  onClick={() => copy(data.id, 'Copied job ID')}
+                >
+                  <Hash className="h-4 w-4" />
+                </Button>
+                {result ? (
+                  <Button
+                    aria-label="Click to copy RSS URL"
+                    title="Click to copy RSS URL"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground"
+                    onClick={() => copy(result.feed_url, 'Copied RSS URL')}
+                  >
+                    <Rss className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </CardDescription>
             </div>
             {data.status === 'failed' ? (
               <Button variant="secondary" onClick={() => retry.mutate()} disabled={retry.isPending}>
@@ -56,12 +79,11 @@ export function JobPage() {
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 pt-6">
           <StageProgress job={data} />
           {data.error ? <Alert className="border-destructive text-destructive"><AlertTitle>Generation failed</AlertTitle><AlertDescription>{data.error}</AlertDescription></Alert> : null}
           {result ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <Button variant="secondary" onClick={() => copy(result.feed_url)}>Copy RSS URL</Button>
+            <div>
               <audio className="w-full" controls src={result.episode_audio_url} />
             </div>
           ) : null}
@@ -73,10 +95,23 @@ export function JobPage() {
           <CardTitle>Sources</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {(result?.sources ?? data.urls.map((url) => ({ title: url, url, markdown: '' }))).map((source) => (
-            <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block rounded-lg border p-3 hover:bg-accent">
-              <p className="font-medium">{source.title}</p>
-              <p className="break-all text-sm text-muted-foreground">{source.url}</p>
+          {(result?.sources ?? data.urls.map((url) => ({ title: url, url, markdown: '', image_url: null }))).map((source) => (
+            <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent">
+              {source.image_url ? (
+                <img
+                  src={source.image_url}
+                  alt=""
+                  className="h-16 w-24 shrink-0 rounded-md border object-cover"
+                  loading="lazy"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none'
+                  }}
+                />
+              ) : null}
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium" title={source.title}>{source.title}</p>
+                <p className="truncate text-sm text-muted-foreground" title={source.url}>{source.url}</p>
+              </div>
             </a>
           ))}
         </CardContent>
@@ -98,7 +133,7 @@ export function JobPage() {
   )
 }
 
-async function copy(value: string) {
+async function copy(value: string, message = 'Copied') {
   await navigator.clipboard.writeText(value)
-  toast.success('Copied')
+  toast.success(message)
 }

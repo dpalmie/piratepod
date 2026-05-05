@@ -127,7 +127,14 @@ async def _scriptgen(
         resp = await client.post(
             f"{SCRIPTGEN_URL}/scriptgen/script",
             json={
-                "sources": [source.model_dump() for source in sources],
+                "sources": [
+                    {
+                        "title": source.title,
+                        "url": source.url,
+                        "markdown": source.markdown,
+                    }
+                    for source in sources
+                ],
                 "title": title,
             },
         )

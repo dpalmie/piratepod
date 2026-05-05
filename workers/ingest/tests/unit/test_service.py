@@ -20,6 +20,35 @@ def test_url_response_maps_jina_json_data() -> None:
     assert result.markdown == "This domain is for use in documentation examples.\n"
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["image", "imageUrl", "ogImage", "og:image", "twitterImage", "twitter:image"],
+)
+def test_url_response_maps_preview_image_fields(field: str) -> None:
+    result = UrlResponse.model_validate(
+        {
+            "title": "Example Domain",
+            "url": "https://example.com/",
+            "content": "Body",
+            field: "https://cdn.example.com/card.jpg",
+        }
+    )
+
+    assert result.image_url == "https://cdn.example.com/card.jpg"
+
+
+def test_url_response_maps_markdown_image_fallback() -> None:
+    result = UrlResponse.model_validate(
+        {
+            "title": "Example Domain",
+            "url": "https://example.com/posts/story",
+            "content": "![Preview](/images/card.jpg)\n\nBody",
+        }
+    )
+
+    assert result.image_url == "https://example.com/images/card.jpg"
+
+
 def test_url_response_accepts_our_api_field_names() -> None:
     result = UrlResponse.model_validate(
         {

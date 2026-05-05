@@ -7,6 +7,7 @@ export interface Source {
   title: string
   url: string
   markdown: string
+  image_url?: string | null
 }
 
 export interface GenerateResult {

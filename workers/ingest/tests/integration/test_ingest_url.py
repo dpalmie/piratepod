@@ -68,6 +68,31 @@ async def test_ingest_url_omits_auth_when_no_key(
     assert "authorization" not in route.calls.last.request.headers
 
 
+async def test_ingest_url_returns_preview_image_when_available(
+    client: AsyncClient,
+    jina_mock: respx.MockRouter,
+    jina_reader_url: str,
+) -> None:
+    jina_mock.get(f"{jina_reader_url}https://example.com/").respond(
+        200,
+        json={
+            "code": 200,
+            "status": 20000,
+            "data": {
+                "title": "Example Domain",
+                "url": "https://example.com/",
+                "content": "ok",
+                "ogImage": "https://cdn.example.com/card.jpg",
+            },
+        },
+    )
+
+    resp = await client.post("/ingest/url", json={"url": "example.com"})
+
+    assert resp.status_code == 200
+    assert resp.json()["image_url"] == "https://cdn.example.com/card.jpg"
+
+
 async def test_ingest_url_surfaces_upstream_error(
     client: AsyncClient,
     jina_mock: respx.MockRouter,

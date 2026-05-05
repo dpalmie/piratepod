@@ -23,6 +23,7 @@ class SourceResponse(BaseModel):
     title: str
     url: str
     markdown: str
+    image_url: str | None = None
 
 
 class GenerateResponse(BaseModel):
