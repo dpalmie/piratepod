@@ -52,6 +52,8 @@ func TestRenderProducesValidXMLWithIdentifyingElements(t *testing.T) {
 		`xmlns:atom="http://www.w3.org/2005/Atom"`,
 		`<title>Tech Talk</title>`,
 		`<itunes:author>Alice</itunes:author>`,
+		`<itunes:category text="Technology"></itunes:category>`,
+		`<itunes:explicit>false</itunes:explicit>`,
 		`<itunes:image href="https://example.com/cover.jpg"></itunes:image>`,
 		`<enclosure url="https://example.com/media/xK9mBq2n/ep-1.wav" length="12345" type="audio/wav"></enclosure>`,
 		`<guid isPermaLink="false">ep-1</guid>`,

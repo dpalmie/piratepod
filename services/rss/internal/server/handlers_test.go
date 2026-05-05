@@ -58,3 +58,25 @@ func TestAudioUploadTypeRejectsUnsupportedTypes(t *testing.T) {
 		t.Fatal("expected unsupported type error")
 	}
 }
+
+func TestRewriteLocalMediaURLUsesConfiguredMediaURL(t *testing.T) {
+	got := rewriteLocalMediaURL(
+		"http://localhost:8080/media/feed/episode.wav",
+		"https://public.example.com/media",
+	)
+
+	if want := "https://public.example.com/media/feed/episode.wav"; got != want {
+		t.Fatalf("rewriteLocalMediaURL = %q, want %q", got, want)
+	}
+}
+
+func TestRewriteLocalMediaURLPreservesExternalURL(t *testing.T) {
+	got := rewriteLocalMediaURL(
+		"https://cdn.example.com/media/feed/episode.wav",
+		"https://public.example.com/media",
+	)
+
+	if want := "https://cdn.example.com/media/feed/episode.wav"; got != want {
+		t.Fatalf("rewriteLocalMediaURL = %q, want %q", got, want)
+	}
+}

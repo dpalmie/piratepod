@@ -24,15 +24,17 @@ type rss struct {
 }
 
 type channel struct {
-	AtomLink    atomLink     `xml:"atom:link"`
-	Title       string       `xml:"title"`
-	Link        string       `xml:"link"`
-	Language    string       `xml:"language"`
-	Description string       `xml:"description"`
-	Author      string       `xml:"itunes:author,omitempty"`
-	Summary     string       `xml:"itunes:summary,omitempty"`
-	Image       *itunesImage `xml:"itunes:image,omitempty"`
-	Items       []item       `xml:"item"`
+	AtomLink    atomLink       `xml:"atom:link"`
+	Title       string         `xml:"title"`
+	Link        string         `xml:"link"`
+	Language    string         `xml:"language"`
+	Description string         `xml:"description"`
+	Author      string         `xml:"itunes:author,omitempty"`
+	Summary     string         `xml:"itunes:summary,omitempty"`
+	Category    itunesCategory `xml:"itunes:category"`
+	Explicit    string         `xml:"itunes:explicit"`
+	Image       *itunesImage   `xml:"itunes:image,omitempty"`
+	Items       []item         `xml:"item"`
 }
 
 type atomLink struct {
@@ -43,6 +45,10 @@ type atomLink struct {
 
 type itunesImage struct {
 	Href string `xml:"href,attr"`
+}
+
+type itunesCategory struct {
+	Text string `xml:"text,attr"`
 }
 
 type item struct {
@@ -80,6 +86,8 @@ func Render(p db.Podcast, eps []db.Episode, feedURL string) ([]byte, error) {
 		Description: p.Description,
 		Author:      p.Author,
 		Summary:     p.Description,
+		Category:    itunesCategory{Text: "Technology"},
+		Explicit:    "false",
 		Items:       make([]item, 0, len(eps)),
 	}
 	if p.CoverURL != "" {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -238,7 +239,7 @@ func (h *Handler) getFeed(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, "list episodes", err)
 		return
 	}
-	body, err := feed.Render(p, episodes, h.feedURL(p.Slug))
+	body, err := feed.Render(p, rewriteLocalMediaURLs(episodes, h.cfg.MediaURL), h.feedURL(p.Slug))
 	if err != nil {
 		h.serverError(w, "render feed", err)
 		return
@@ -270,6 +271,36 @@ func (h *Handler) getMedia(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) feedURL(slug string) string {
 	return h.cfg.BaseURL + "/feeds/" + slug
+}
+
+func rewriteLocalMediaURLs(episodes []db.Episode, mediaURL string) []db.Episode {
+	out := make([]db.Episode, len(episodes))
+	for i, episode := range episodes {
+		out[i] = episode
+		out[i].AudioURL = rewriteLocalMediaURL(episode.AudioURL, mediaURL)
+	}
+	return out
+}
+
+func rewriteLocalMediaURL(audioURL, mediaURL string) string {
+	u, err := url.Parse(audioURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return audioURL
+	}
+	if !isLoopbackHost(u.Hostname()) || !strings.HasPrefix(u.Path, "/media/") {
+		return audioURL
+	}
+	key := strings.TrimPrefix(u.Path, "/media/")
+	return strings.TrimRight(mediaURL, "/") + "/" + strings.TrimLeft(key, "/")
+}
+
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handler) serverError(w http.ResponseWriter, op string, err error) {
