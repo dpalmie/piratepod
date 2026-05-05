@@ -157,7 +157,8 @@ async def _audiogen(
         )
         resp.raise_for_status()
     except httpx.HTTPStatusError as e:
-        raise HTTPException(502, f"audiogen failed: {e.response.status_code}") from e
+        detail = _upstream_error("audiogen failed", e.response)
+        raise HTTPException(502, detail) from e
     except httpx.RequestError as e:
         raise HTTPException(502, f"audiogen unreachable: {e}") from e
 
@@ -322,3 +323,11 @@ def _audio_content_type(audio_format: str, suffix: str) -> str:
     if normalized == "mp3" or suffix == "mp3":
         return "audio/mpeg"
     raise HTTPException(502, f"unsupported generated audio format: {audio_format}")
+
+
+def _upstream_error(prefix: str, response: httpx.Response) -> str:
+    body = response.text.strip()
+    message = f"{prefix}: {response.status_code}"
+    if body:
+        message += f": {body[:500]}"
+    return message

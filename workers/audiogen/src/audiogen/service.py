@@ -117,16 +117,30 @@ def _write_prompt_file(text: str) -> Path:
 
 
 def _concat_wavs(part_paths: list[Path], out_path: Path) -> None:
-    params = None
+    expected_format = None
     with wave.open(str(out_path), "wb") as out:
         for part_path in part_paths:
             with wave.open(str(part_path), "rb") as part:
-                if params is None:
-                    params = part.getparams()
-                    out.setparams(params)
-                elif part.getparams() != params:
+                current_format = _wav_format(part)
+                if expected_format is None:
+                    expected_format = current_format
+                    out.setnchannels(part.getnchannels())
+                    out.setsampwidth(part.getsampwidth())
+                    out.setframerate(part.getframerate())
+                    out.setcomptype(part.getcomptype(), part.getcompname())
+                elif current_format != expected_format:
                     raise HTTPException(502, "llama-tts produced incompatible wav chunks")
                 out.writeframes(part.readframes(part.getnframes()))
+
+
+def _wav_format(wav: wave.Wave_read) -> tuple[int, int, int, str, str]:
+    return (
+        wav.getnchannels(),
+        wav.getsampwidth(),
+        wav.getframerate(),
+        wav.getcomptype(),
+        wav.getcompname(),
+    )
 
 
 def _script_chunks(script: str, max_chars: int) -> list[str]:

@@ -134,7 +134,11 @@ backend-run: scriptgen-llm-check audiogen-check
             exit 1
         fi
         echo "starting $name -> $log"
-        "$@" >"$log" 2>&1 &
+        if [[ "${PIRATEPOD_CONSOLE_LOGS:-1}" == "0" ]]; then
+            "$@" >"$log" 2>&1 &
+        else
+            ( "$@" 2>&1 | tee "$log" | awk -v name="$name" '{ print "[" name "] " $0; fflush() }' ) &
+        fi
         echo "$!" > "$pid_file"
     }
 
@@ -266,7 +270,11 @@ app-run-web: scriptgen-llm-check audiogen-check
             exit 1
         fi
         echo "starting $name -> $log"
-        "$@" >"$log" 2>&1 &
+        if [[ "${PIRATEPOD_CONSOLE_LOGS:-1}" == "0" ]]; then
+            "$@" >"$log" 2>&1 &
+        else
+            ( "$@" 2>&1 | tee "$log" | awk -v name="$name" '{ print "[" name "] " $0; fflush() }' ) &
+        fi
         echo "$!" > "$pid_file"
     }
 

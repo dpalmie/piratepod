@@ -1,4 +1,5 @@
 import subprocess
+import wave
 from pathlib import Path
 
 import pytest
@@ -108,3 +109,34 @@ def test_predict_tokens_scales_with_words(monkeypatch) -> None:
     assert service._predict_tokens("one two three") == 100
     assert service._predict_tokens(" ".join(["word"] * 50)) == 500
     assert service._predict_tokens(" ".join(["word"] * 200)) == 1000
+
+
+def test_concat_wavs_accepts_different_chunk_lengths(tmp_path: Path) -> None:
+    first = write_wav(tmp_path / "first.wav", frames=100)
+    second = write_wav(tmp_path / "second.wav", frames=250)
+    out = tmp_path / "out.wav"
+
+    service._concat_wavs([first, second], out)
+
+    with wave.open(str(out), "rb") as wav:
+        assert wav.getnframes() == 350
+        assert wav.getframerate() == 8000
+
+
+def test_concat_wavs_rejects_incompatible_formats(tmp_path: Path) -> None:
+    first = write_wav(tmp_path / "first.wav", frames=100, framerate=8000)
+    second = write_wav(tmp_path / "second.wav", frames=100, framerate=16000)
+
+    with pytest.raises(HTTPException) as exc:
+        service._concat_wavs([first, second], tmp_path / "out.wav")
+
+    assert exc.value.status_code == 502
+
+
+def write_wav(path: Path, *, frames: int, framerate: int = 8000) -> Path:
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(framerate)
+        wav.writeframes(b"\0\0" * frames)
+    return path
