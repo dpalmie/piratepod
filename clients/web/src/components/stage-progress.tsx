@@ -20,10 +20,10 @@ export function StageProgress({ job }: { job: Job }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <Badge variant={job.status === 'failed' ? 'destructive' : job.status === 'succeeded' ? 'default' : 'secondary'}>{job.status}</Badge>
+        <Badge variant={job.status === 'failed' ? 'destructive' : job.status === 'succeeded' ? 'default' : 'secondary'}>{labelize(job.status)}</Badge>
         <div className="text-sm text-muted-foreground md:text-right">
-          <p>Current stage: {job.stage}</p>
-          {currentEvent?.message ? <p className="text-xs">{currentEvent.message}</p> : null}
+          <p>Current stage: {labelize(job.stage)}</p>
+          {currentEvent?.message && !isRedundantMessage(currentEvent.message) ? <p className="text-xs">{sentenceCase(currentEvent.message)}</p> : null}
         </div>
       </div>
       <Progress value={value} />
@@ -63,6 +63,23 @@ function stageEvent(events: JobEvent[] | undefined, stage: JobStage) {
 
 function latestEvent(events: JobEvent[] | undefined) {
   return events?.at(-1)
+}
+
+function labelize(value: string) {
+  return value
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function sentenceCase(value: string) {
+  const trimmed = value.trim()
+  return trimmed ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1) : ''
+}
+
+function isRedundantMessage(message: string) {
+  return ['job queued', 'job started', 'job succeeded', 'job retried'].includes(message.trim().toLowerCase())
 }
 
 function formatEventTime(iso: string) {
