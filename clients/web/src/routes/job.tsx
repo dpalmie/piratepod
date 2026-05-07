@@ -38,6 +38,7 @@ export function JobPage() {
 
   const data = job.data
   const result = data.result
+  const sources = result?.sources ?? data.urls.map((url) => ({ title: url, url, markdown: '', image_url: null }))
 
   return (
     <div className="space-y-6">
@@ -95,7 +96,7 @@ export function JobPage() {
           <CardTitle>Sources</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {(result?.sources ?? data.urls.map((url) => ({ title: url, url, markdown: '', image_url: null }))).map((source) => (
+          {sources.map((source) => (
             <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent">
               {source.image_url ? (
                 <img
